@@ -428,11 +428,60 @@ export default function App() {
     }
   };
 
-  const handleDrop = (e) => {
+  const getAllFiles = async (dataTransferItemList) => {
+    const filePromises = [];
+    for (let i = 0; i < dataTransferItemList.length; i++) {
+      const item = dataTransferItemList[i];
+      if (item.kind === "file") {
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry) {
+          filePromises.push(scanEntry(entry));
+        } else {
+          filePromises.push(Promise.resolve([item.getAsFile()]));
+        }
+      }
+    }
+    const nestedFiles = await Promise.all(filePromises);
+    return nestedFiles.reduce((acc, val) => acc.concat(val), []);
+  };
+
+  const scanEntry = (entry) => {
+    return new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file(file => resolve([file]), () => resolve([]));
+      } else if (entry.isDirectory) {
+        const dirReader = entry.createReader();
+        const allFiles = [];
+        const readEntries = () => {
+          dirReader.readEntries(async (entries) => {
+            if (entries.length === 0) {
+              resolve(allFiles);
+            } else {
+              const promises = entries.map(e => scanEntry(e));
+              const files = await Promise.all(promises);
+              allFiles.push(...files.reduce((a, b) => a.concat(b), []));
+              readEntries();
+            }
+          }, () => resolve([]));
+        };
+        readEntries();
+      } else {
+        resolve([]);
+      }
+    });
+  };
+
+  const handleDrop = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    
+    if (e.dataTransfer.items) {
+      const files = await getAllFiles(e.dataTransfer.items);
+      if (files.length > 0) {
+        processFiles(files);
+      }
+    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       processFiles(e.dataTransfer.files);
     }
   };
@@ -586,17 +635,17 @@ export default function App() {
             <div className="card-panel">
               <p className="card-title">Where to Find Your Session Files</p>
               <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
-                Claude Desktop App stores your project transcripts as local <code style={{ color: "#a78bfa" }}>.jsonl</code> files. Copy the command below for your operating system to open the folder:
+                Claude Desktop App stores your project transcripts as local <code style={{ color: "#a78bfa" }}>.jsonl</code> files. Copy the path below and use <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> (Mac) in the file upload window to jump straight to it.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 12, color: "#64748b", fontWeight: "600", marginBottom: 6 }}>macOS</div>
                   <div className="path-box">
-                    <span className="path-text">open ~/.claude/projects/</span>
+                    <span className="path-text">~/.claude/projects/</span>
                     <button 
                       className="path-copy-btn" 
-                      onClick={() => handleCliPathCopy("open ~/.claude/projects/", "mac")}
+                      onClick={() => handleCliPathCopy("~/.claude/projects/", "mac")}
                     >
                       {cliCopied === "mac" ? "✓ Copied" : "📋 Copy"}
                     </button>
@@ -606,10 +655,10 @@ export default function App() {
                 <div>
                   <div style={{ fontSize: 12, color: "#64748b", fontWeight: "600", marginBottom: 6 }}>Linux</div>
                   <div className="path-box">
-                    <span className="path-text">xdg-open ~/.claude/projects/</span>
+                    <span className="path-text">~/.claude/projects/</span>
                     <button 
                       className="path-copy-btn" 
-                      onClick={() => handleCliPathCopy("xdg-open ~/.claude/projects/", "linux")}
+                      onClick={() => handleCliPathCopy("~/.claude/projects/", "linux")}
                     >
                       {cliCopied === "linux" ? "✓ Copied" : "📋 Copy"}
                     </button>
