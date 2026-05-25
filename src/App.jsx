@@ -249,13 +249,13 @@ const parseClaudeCodeJsonl = (fileContent) => {
           }
         }
         if (blocks.length > 0) {
-          if (currentRequestId && currentRequestId === obj.requestId && messages.length > 0 && messages[messages.length - 1].role === "## Claude Code") {
+          if (currentRequestId && currentRequestId === obj.requestId && messages.length > 0 && messages[messages.length - 1].role === "## Claude") {
             // merge into last message
             messages[messages.length - 1].blocks.push(...blocks);
             messages[messages.length - 1].timestamp = obj.timestamp;
           } else {
             messages.push({
-              role: "## Claude Code",
+              role: "## Claude",
               blocks: blocks,
               timestamp: obj.timestamp,
               requestId: obj.requestId
@@ -269,7 +269,7 @@ const parseClaudeCodeJsonl = (fileContent) => {
     }
   }
 
-  if (!title) title = "Claude Code Session";
+  if (!title) title = "Claude Desktop Session";
   return { title, date, messages };
 };
 
@@ -277,9 +277,9 @@ const generateMarkdown = (session, includeThinking, includeTools) => {
   const nl = "\n";
   let md = `# ${session.title}${nl}${nl}`;
   if (session.date) {
-    md += `> Exported from Claude Code on ${session.date}${nl}${nl}`;
+    md += `> Exported from Claude Desktop on ${session.date}${nl}${nl}`;
   } else {
-    md += `> Exported from Claude Code${nl}${nl}`;
+    md += `> Exported from Claude Desktop${nl}${nl}`;
   }
   md += `---${nl}${nl}`;
 
@@ -412,7 +412,7 @@ export default function App() {
       .replace(/^-|-$/g, "")
       .toLowerCase()
       .slice(0, 60);
-    a.download = `${sanitizedTitle || "claude-code-export"}.md`;
+    a.download = `${sanitizedTitle || "claude-desktop-export"}.md`;
     
     document.body.appendChild(a);
     a.click();
@@ -432,7 +432,7 @@ export default function App() {
             <span className="title-highlight">Exporter</span>
           </h1>
           <p className="subtitle">
-            Export any web-based AI chat or local Claude Code CLI session as a beautifully formatted Markdown file. 100% private and runs entirely locally.
+            Export any web-based AI chat or local Claude Desktop App session as a beautifully formatted Markdown file. 100% private and runs entirely locally.
           </p>
         </div>
 
@@ -448,7 +448,7 @@ export default function App() {
             className={`tab-button ${activeTab === "cli" ? "active" : ""}`}
             onClick={() => setActiveTab("cli")}
           >
-            💻 Claude Code CLI
+            💻 Claude Desktop App
           </button>
         </div>
 
@@ -535,14 +535,14 @@ export default function App() {
           </div>
         )}
 
-        {/* ==================== CLAUDE CODE CLI TAB ==================== */}
+        {/* ==================== CLAUDE DESKTOP APP TAB ==================== */}
         {activeTab === "cli" && (
           <div>
             {/* Guide */}
             <div className="card-panel">
               <p className="card-title">Where to Find Your Session Files</p>
               <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
-                Claude Code CLI stores your project transcripts as local <code style={{ color: "#a78bfa" }}>.jsonl</code> files. Copy the command below for your operating system to open the folder:
+                Claude Desktop App stores your project transcripts as local <code style={{ color: "#a78bfa" }}>.jsonl</code> files. Copy the command below for your operating system to open the folder:
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -644,7 +644,7 @@ export default function App() {
                 />
                 <span className="dropzone-icon">📥</span>
                 <span className="dropzone-title">
-                  {parsedSession ? "Change session file" : "Drag & drop your Claude Code session file here"}
+                  {parsedSession ? "Change session file" : "Drag & drop your Claude Desktop session file here"}
                 </span>
                 <span className="dropzone-desc">Supports .jsonl and .json files. Or click to browse.</span>
               </div>
@@ -703,7 +703,7 @@ export default function App() {
                       <div style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 16, marginBottom: 24 }}>
                         <h2 style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", marginBottom: 8 }}># {parsedSession.title}</h2>
                         <div style={{ color: "#64748b", fontStyle: "italic", fontSize: 12 }}>
-                          {parsedSession.date ? `> Exported from Claude Code on ${parsedSession.date}` : `> Exported from Claude Code`}
+                          {parsedSession.date ? `> Exported from Claude Desktop on ${parsedSession.date}` : `> Exported from Claude Desktop`}
                         </div>
                       </div>
 
@@ -724,7 +724,7 @@ export default function App() {
 
                         return (
                           <div key={idx} className={`preview-chat-bubble ${isUser ? "user" : "assistant"}`}>
-                            <div className="bubble-role">{isUser ? "🧑 You" : "🤖 Claude Code"}</div>
+                            <div className="bubble-role">{isUser ? "🧑 You" : "🤖 Claude"}</div>
                             
                             {renderedBlocks.map((block, bIdx) => {
                               if (block.type === "text") {
