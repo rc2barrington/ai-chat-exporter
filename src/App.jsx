@@ -329,10 +329,12 @@ export default function App() {
   const [includeThinking, setIncludeThinking] = useState(true);
   const [includeTools, setIncludeTools] = useState(false);
   const [parsedSession, setParsedSession] = useState(null);
+  const [availableSessions, setAvailableSessions] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const [parseError, setParseError] = useState("");
 
   const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(consoleCode);
@@ -357,45 +359,87 @@ export default function App() {
     }
   };
 
-  const processFile = (file) => {
-    if (!file) return;
-    if (!file.name.endsWith(".jsonl") && !file.name.endsWith(".json")) {
-      setParseError("Please upload a .jsonl or .json session file.");
-      setParsedSession(null);
+  const processFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    
+    setParseError("");
+    const validFiles = Array.from(files).filter(f => f.name.endsWith('.jsonl') || f.name.endsWith('.json'));
+    
+    if (validFiles.length === 0) {
+      setParseError("No valid .jsonl or .json session files found.");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const parsed = parseClaudeCodeJsonl(text);
-      if (!parsed.messages || parsed.messages.length === 0) {
-        setParseError("No valid chat messages found in this session file.");
+    if (validFiles.length === 1) {
+      // Single file upload mode
+      const file = validFiles[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result;
+        const parsed = parseClaudeCodeJsonl(text);
+        if (!parsed.messages || parsed.messages.length === 0) {
+          setParseError("No valid chat messages found in this session file.");
+          setParsedSession(null);
+        } else {
+          setParsedSession({ ...parsed, fileName: file.name });
+          setAvailableSessions([]);
+        }
+      };
+      reader.onerror = () => {
+        setParseError("Error reading the session file.");
         setParsedSession(null);
-      } else {
-        setParseError("");
-        setParsedSession({ ...parsed, fileName: file.name });
-      }
-    };
-    reader.onerror = () => {
-      setParseError("Error reading the session file.");
+      };
+      reader.readAsText(file);
+      return;
+    }
+
+    // Multiple files (folder upload)
+    const sessions = [];
+    const readPromises = validFiles.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const text = e.target.result;
+          const parsed = parseClaudeCodeJsonl(text);
+          if (parsed.messages && parsed.messages.length > 0) {
+            sessions.push({ ...parsed, fileName: file.name });
+          }
+          resolve();
+        };
+        reader.onerror = () => resolve();
+        reader.readAsText(file);
+      });
+    });
+
+    await Promise.all(readPromises);
+    
+    // Sort sessions by date (newest first)
+    sessions.sort((a, b) => {
+      const dateA = new Date(a.date || 0).getTime();
+      const dateB = new Date(b.date || 0).getTime();
+      return dateB - dateA;
+    });
+
+    if (sessions.length === 0) {
+      setParseError("No valid chat messages found in any of the files.");
+    } else {
+      setAvailableSessions(sessions);
       setParsedSession(null);
-    };
-    reader.readAsText(file);
+    }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
     }
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
     }
   };
 
@@ -627,27 +671,95 @@ export default function App() {
               </div>
 
               {/* Drag Zone */}
-              <div 
-                className={`dropzone ${dragActive ? "active" : ""}`}
-                onDragEnter={handleDrag}
-                onDragOver={handleDrag}
-                onDragLeave={handleDrag}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current.click()}
-              >
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  style={{ display: "none" }} 
-                  accept=".jsonl,.json" 
-                  onChange={handleFileChange}
-                />
-                <span className="dropzone-icon">📥</span>
-                <span className="dropzone-title">
-                  {parsedSession ? "Change session file" : "Drag & drop your Claude Desktop session file here"}
-                </span>
-                <span className="dropzone-desc">Supports .jsonl and .json files. Or click to browse.</span>
-              </div>
+              {!parsedSession && availableSessions.length === 0 && (
+                <div 
+                  className={`dropzone ${dragActive ? "active" : ""}`}
+                  onDragEnter={handleDrag}
+                  onDragOver={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDrop={handleDrop}
+                >
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    style={{ display: "none" }} 
+                    accept=".jsonl,.json" 
+                    multiple
+                    onChange={handleFileChange}
+                  />
+                  <input 
+                    type="file" 
+                    ref={folderInputRef}
+                    style={{ display: "none" }} 
+                    webkitdirectory="true"
+                    directory="true"
+                    onChange={handleFileChange}
+                  />
+                  <span className="dropzone-icon">📥</span>
+                  <span className="dropzone-title">
+                    Drag & drop your Claude Desktop session file(s) here
+                  </span>
+                  <span className="dropzone-desc">Supports .jsonl and .json files.</span>
+                  <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 20 }}>
+                    <button 
+                      className="btn-primary" 
+                      onClick={(e) => { e.stopPropagation(); fileInputRef.current.click(); }}
+                      style={{ padding: "10px 20px", fontSize: 13 }}
+                    >
+                      Browse Files
+                    </button>
+                    <button 
+                      className="btn-primary" 
+                      onClick={(e) => { e.stopPropagation(); folderInputRef.current.click(); }}
+                      style={{ padding: "10px 20px", fontSize: 13, background: "#6366f1" }}
+                    >
+                      📁 Scan Projects Folder
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Sessions List */}
+              {!parsedSession && availableSessions.length > 0 && (
+                <div className="sessions-list" style={{ animation: "fadeIn 0.3s ease", marginTop: 24 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <h3 style={{ color: "#f8fafc", margin: 0 }}>Found {availableSessions.length} Sessions</h3>
+                    <button 
+                      className="btn-secondary"
+                      onClick={() => setAvailableSessions([])}
+                      style={{ fontSize: 12, padding: "6px 12px", background: "rgba(255,255,255,0.1)", border: "none", color: "#e2e8f0", borderRadius: 6, cursor: "pointer" }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 400, overflowY: "auto", paddingRight: 8 }}>
+                    {availableSessions.map((sess, idx) => (
+                      <div 
+                        key={idx} 
+                        className="session-list-item"
+                        onClick={() => setParsedSession(sess)}
+                        style={{ 
+                          background: "rgba(255,255,255,0.03)", 
+                          border: "1px solid rgba(255,255,255,0.06)", 
+                          padding: 16, 
+                          borderRadius: 8, 
+                          cursor: "pointer",
+                          transition: "background 0.2s"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                        onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
+                      >
+                        <h4 style={{ margin: "0 0 6px", color: "#e2e8f0", fontSize: 15 }}>{sess.title}</h4>
+                        <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", gap: 12 }}>
+                          <span>📅 {sess.date || "Unknown date"}</span>
+                          <span>💬 {sess.messages.length} messages</span>
+                          <span style={{ color: "#475569" }}>📄 {sess.fileName}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {parseError && (
                 <div style={{ color: "#ef4444", fontSize: 13, marginTop: 14, textAlign: "center", fontWeight: 500 }}>
@@ -678,9 +790,20 @@ export default function App() {
                       )}
                     </div>
                   </div>
-                  <button onClick={handleDownload} className="btn-primary btn-success">
-                    💾 Download Markdown
-                  </button>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    {availableSessions.length > 0 ? (
+                      <button onClick={() => setParsedSession(null)} className="btn-secondary" style={{ padding: "10px 16px", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 600 }}>
+                        ← Back to List
+                      </button>
+                    ) : (
+                      <button onClick={() => setParsedSession(null)} className="btn-secondary" style={{ padding: "10px 16px", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: 8, cursor: "pointer", fontWeight: 600 }}>
+                        Change File
+                      </button>
+                    )}
+                    <button onClick={handleDownload} className="btn-primary btn-success">
+                      💾 Download Markdown
+                    </button>
+                  </div>
                 </div>
 
                 {/* Conversation Preview */}
