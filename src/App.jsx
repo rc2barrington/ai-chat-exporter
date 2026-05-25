@@ -198,6 +198,7 @@ const parseClaudeCodeJsonl = (fileContent) => {
   const messages = [];
   let title = "";
   let date = "";
+  let currentRequestId = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -212,6 +213,7 @@ const parseClaudeCodeJsonl = (fileContent) => {
       }
 
       if (obj.type === "user") {
+        currentRequestId = null; // reset for new user msg
         const content = obj.message?.content;
         let text = "";
         if (typeof content === "string") {
@@ -247,11 +249,19 @@ const parseClaudeCodeJsonl = (fileContent) => {
           }
         }
         if (blocks.length > 0) {
-          messages.push({
-            role: "## Claude Code",
-            blocks: blocks,
-            timestamp: obj.timestamp,
-          });
+          if (currentRequestId && currentRequestId === obj.requestId && messages.length > 0 && messages[messages.length - 1].role === "## Claude Code") {
+            // merge into last message
+            messages[messages.length - 1].blocks.push(...blocks);
+            messages[messages.length - 1].timestamp = obj.timestamp;
+          } else {
+            messages.push({
+              role: "## Claude Code",
+              blocks: blocks,
+              timestamp: obj.timestamp,
+              requestId: obj.requestId
+            });
+            currentRequestId = obj.requestId;
+          }
         }
       }
     } catch {
