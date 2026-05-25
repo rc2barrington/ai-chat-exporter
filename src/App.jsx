@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
+import "./App.css";
 
-// The console snippet — readable, well-formatted version
+// The console snippet for browser export (ChatGPT, Claude.ai, Gemini)
 const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT & Gemini)
 (async function() {
   var isChatGPT = !!document.querySelector('[data-message-author-role]');
@@ -169,7 +170,7 @@ const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT & Gemini)
   document.body.removeChild(a);
   setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
   console.log("Exported " + messages.length + " messages: " + a.download);
-})();`;;
+})();`;
 
 const steps = [
   {
@@ -187,13 +188,141 @@ const steps = [
   {
     num: "03",
     title: "Paste & run the script",
-    detail: "Click the \"Copy Script\" button above, paste into the console with Cmd+V, and press Enter. The .md file downloads instantly.",
+    detail: 'Click the "Copy Script" button above, paste into the console with Cmd+V, and press Enter. The .md file downloads instantly.',
     icon: "📥",
   },
 ];
 
+const parseClaudeCodeJsonl = (fileContent) => {
+  const lines = fileContent.split("\n");
+  const messages = [];
+  let title = "";
+  let date = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj.type === "ai-title" && obj.aiTitle) {
+        title = obj.aiTitle;
+      }
+      if (obj.timestamp && !date) {
+        date = new Date(obj.timestamp).toLocaleString();
+      }
+
+      if (obj.type === "user") {
+        const content = obj.message?.content;
+        let text = "";
+        if (typeof content === "string") {
+          text = content;
+        } else if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "text") {
+              text += block.text;
+            }
+          }
+        }
+        if (text.trim()) {
+          messages.push({
+            role: "## You",
+            blocks: [{ type: "text", text: text.trim() }],
+            timestamp: obj.timestamp,
+          });
+        }
+      } else if (obj.type === "assistant") {
+        const content = obj.message?.content;
+        const blocks = [];
+        if (typeof content === "string") {
+          blocks.push({ type: "text", text: content });
+        } else if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === "text") {
+              blocks.push({ type: "text", text: block.text });
+            } else if (block.type === "thinking") {
+              blocks.push({ type: "thinking", thinking: block.thinking });
+            } else if (block.type === "tool_use") {
+              blocks.push({ type: "tool_use", name: block.name, input: block.input });
+            }
+          }
+        }
+        if (blocks.length > 0) {
+          messages.push({
+            role: "## Claude Code",
+            blocks: blocks,
+            timestamp: obj.timestamp,
+          });
+        }
+      }
+    } catch {
+      // Ignore parse errors on individual malformed lines
+    }
+  }
+
+  if (!title) title = "Claude Code Session";
+  return { title, date, messages };
+};
+
+const generateMarkdown = (session, includeThinking, includeTools) => {
+  const nl = "\n";
+  let md = `# ${session.title}${nl}${nl}`;
+  if (session.date) {
+    md += `> Exported from Claude Code on ${session.date}${nl}${nl}`;
+  } else {
+    md += `> Exported from Claude Code${nl}${nl}`;
+  }
+  md += `---${nl}${nl}`;
+
+  const validMessages = [];
+  session.messages.forEach((msg) => {
+    let content = "";
+    if (msg.role === "## You") {
+      content = msg.blocks.map(b => b.text).join('\n').trim();
+    } else {
+      content = msg.blocks
+        .map((block) => {
+          if (block.type === "text") {
+            return block.text;
+          } else if (block.type === "thinking" && includeThinking) {
+            return `<details>\n<summary>Thinking Process</summary>\n\n${block.thinking}\n\n</details>`;
+          } else if (block.type === "tool_use" && includeTools) {
+            return `\n**Tool Use: \`${block.name}\`**\n\`\`\`json\n${JSON.stringify(block.input, null, 2)}\n\`\`\``;
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join("\n\n")
+        .trim();
+    }
+
+    if (content) {
+      validMessages.push({ role: msg.role, content });
+    }
+  });
+
+  validMessages.forEach((msg, idx) => {
+    md += `${msg.role}${nl}${nl}${msg.content}${nl}${nl}`;
+    if (idx < validMessages.length - 1) {
+      md += `---${nl}${nl}`;
+    }
+  });
+
+  return md;
+};
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState("web"); // 'web' | 'cli'
   const [copied, setCopied] = useState(false);
+  const [cliCopied, setCliCopied] = useState("");
+
+  // CLI Exporter State
+  const [includeThinking, setIncludeThinking] = useState(true);
+  const [includeTools, setIncludeTools] = useState(false);
+  const [parsedSession, setParsedSession] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [parseError, setParseError] = useState("");
+
+  const fileInputRef = useRef(null);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(consoleCode);
@@ -201,307 +330,439 @@ export default function App() {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  const handleCliPathCopy = (path, name) => {
+    navigator.clipboard.writeText(path);
+    setCliCopied(name);
+    setTimeout(() => setCliCopied(""), 2000);
+  };
+
+  // Drag and Drop Handling
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const processFile = (file) => {
+    if (!file) return;
+    if (!file.name.endsWith(".jsonl") && !file.name.endsWith(".json")) {
+      setParseError("Please upload a .jsonl or .json session file.");
+      setParsedSession(null);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const parsed = parseClaudeCodeJsonl(text);
+      if (!parsed.messages || parsed.messages.length === 0) {
+        setParseError("No valid chat messages found in this session file.");
+        setParsedSession(null);
+      } else {
+        setParseError("");
+        setParsedSession({ ...parsed, fileName: file.name });
+      }
+    };
+    reader.onerror = () => {
+      setParseError("Error reading the session file.");
+      setParsedSession(null);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!parsedSession) return;
+    const md = generateMarkdown(parsedSession, includeThinking, includeTools);
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    
+    const sanitizedTitle = parsedSession.title
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase()
+      .slice(0, 60);
+    a.download = `${sanitizedTitle || "claude-code-export"}.md`;
+    
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#0a0a0f",
-      color: "#e8e6e1",
-      fontFamily: "'Courier New', Courier, monospace",
-      padding: "48px 24px",
-      boxSizing: "border-box",
-    }}>
-      <div style={{ maxWidth: 680, margin: "0 auto" }}>
-
+    <div className="app-container">
+      <div className="max-width-wrapper">
+        
         {/* Header */}
-        <div style={{ marginBottom: 48 }}>
-          <div style={{
-            display: "inline-block",
-            background: "#1a1a2e",
-            border: "1px solid #2a2a4a",
-            borderRadius: 4,
-            padding: "4px 12px",
-            fontSize: 11,
-            color: "#6b7fff",
-            letterSpacing: "0.15em",
-            textTransform: "uppercase",
-            marginBottom: 20,
-          }}>
-            AI Chat Utility Tool
-          </div>
-          <h1 style={{
-            fontSize: "clamp(28px, 5vw, 44px)",
-            fontWeight: 700,
-            margin: "0 0 12px",
-            letterSpacing: "-0.02em",
-            lineHeight: 1.1,
-            fontFamily: "Georgia, serif",
-            color: "#f0ede8",
-          }}>
+        <div style={{ marginBottom: 40, textAlign: "left" }}>
+          <div className="header-badge">AI Chat Utility Tool</div>
+          <h1 className="title-primary">
             Conversation<br />
-            <span style={{ color: "#6b7fff" }}>Exporter</span>
+            <span className="title-highlight">Exporter</span>
           </h1>
-          <p style={{
-            color: "#888",
-            fontSize: 15,
-            lineHeight: 1.7,
-            margin: 0,
-            maxWidth: 480,
-          }}>
-            Export any Claude, ChatGPT, or Gemini conversation as a clean Markdown file. Just copy the script, paste it into your browser console, and hit Enter. No extensions, no sign-in, no data leaves your browser.
+          <p className="subtitle">
+            Export any web-based AI chat or local Claude Code CLI session as a beautifully formatted Markdown file. 100% private and runs entirely locally.
           </p>
         </div>
 
-        {/* Main Copy Button */}
-        <div style={{
-          background: "#0f0f1e",
-          border: "1px solid #1e1e3a",
-          borderRadius: 12,
-          padding: 32,
-          marginBottom: 40,
-          textAlign: "center",
-        }}>
-          <p style={{
-            color: "#666",
-            fontSize: 13,
-            marginBottom: 24,
-            marginTop: 0,
-            letterSpacing: "0.05em",
-          }}>
-            COPY THE EXPORT SCRIPT
-          </p>
-
-          <button
-            onClick={handleCopy}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              background: copied
-                ? "linear-gradient(135deg, #1a3a1a, #1a4a2a)"
-                : "linear-gradient(135deg, #6b7fff, #5a6bef)",
-              color: "#fff",
-              padding: "16px 36px",
-              borderRadius: 10,
-              fontSize: 17,
-              fontWeight: 700,
-              fontFamily: "Georgia, serif",
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              boxShadow: copied
-                ? "0 0 0 3px rgba(74,222,128,0.2), 0 8px 30px rgba(74,222,128,0.15)"
-                : "0 0 0 3px rgba(107,127,255,0.15), 0 8px 30px rgba(107,127,255,0.25)",
-              transform: copied ? "scale(0.98)" : "scale(1)",
-              letterSpacing: "0.01em",
-            }}
+        {/* Tab Selector */}
+        <div className="tab-container">
+          <button 
+            className={`tab-button ${activeTab === "web" ? "active" : ""}`}
+            onClick={() => setActiveTab("web")}
           >
-            {copied ? "✓ Copied to Clipboard!" : "📋 Copy Script"}
+            🌐 Browser Chats
           </button>
-
-          <p style={{
-            color: "#555",
-            fontSize: 12,
-            marginTop: 20,
-            marginBottom: 0,
-            lineHeight: 1.6,
-          }}>
-            Then paste into the Chrome console on any Claude, ChatGPT, or Gemini conversation
-          </p>
+          <button 
+            className={`tab-button ${activeTab === "cli" ? "active" : ""}`}
+            onClick={() => setActiveTab("cli")}
+          >
+            💻 Claude Code CLI
+          </button>
         </div>
 
-        {/* Steps */}
-        <div style={{ marginBottom: 40 }}>
-          <p style={{
-            color: "#666",
-            fontSize: 13,
-            marginBottom: 24,
-            letterSpacing: "0.05em",
-          }}>
-            HOW TO USE IT
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {steps.map((step, i) => (
-              <div key={i} style={{
-                display: "flex",
-                gap: 20,
-                padding: "16px 20px",
-                background: i % 2 === 0 ? "#0d0d1a" : "transparent",
-                borderRadius: 8,
-                alignItems: "flex-start",
-              }}>
-                <span style={{
-                  fontSize: 22,
-                  minWidth: 32,
-                  textAlign: "center",
-                  marginTop: 0,
-                }}>
-                  {step.icon}
-                </span>
-                <div>
-                  <div style={{
-                    color: "#d4d0cb",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    marginBottom: 4,
-                    fontFamily: "Georgia, serif",
-                  }}>
-                    <span style={{
-                      color: "#6b7fff",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      letterSpacing: "0.1em",
-                      opacity: 0.7,
-                      marginRight: 10,
-                    }}>
-                      {step.num}
-                    </span>
-                    {step.title}
-                  </div>
-                  <div style={{ color: "#666", fontSize: 13, lineHeight: 1.6 }}>
-                    {step.detail}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* ==================== BROWSER CHATS TAB ==================== */}
+        {activeTab === "web" && (
+          <div>
+            <div className="card-panel" style={{ textAlign: "center" }}>
+              <p className="card-title">Copy the Browser Export Script</p>
+              
+              <button
+                onClick={handleCopy}
+                className="btn-primary"
+                style={{ marginBottom: 12 }}
+              >
+                {copied ? "✓ Copied to Clipboard!" : "📋 Copy Console Script"}
+              </button>
 
-        {/* Keyboard shortcut hint */}
-        <div style={{
-          background: "#0d0d1a",
-          border: "1px solid #1a1a30",
-          borderRadius: 12,
-          padding: 24,
-          marginBottom: 40,
-        }}>
-          <p style={{
-            color: "#666",
-            fontSize: 13,
-            marginBottom: 16,
-            marginTop: 0,
-            letterSpacing: "0.05em",
-          }}>
-            QUICK REFERENCE — OPEN CONSOLE
-          </p>
-          <div style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: "#888", fontSize: 13 }}>Mac (Chrome)</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["⌘ Cmd", "⌥ Option", "J"].map((key, i) => (
-                  <span key={i}>
-                    <kbd style={{
-                      background: "#151525",
-                      border: "1px solid #252545",
-                      borderRadius: 5,
-                      padding: "4px 10px",
-                      fontSize: 12,
-                      color: "#aaa",
-                      fontFamily: "monospace",
-                    }}>
-                      {key}
-                    </kbd>
-                    {i < 2 && <span style={{ color: "#444", margin: "0 2px" }}> + </span>}
-                  </span>
+              <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6, marginTop: 12 }}>
+                Pasting this script in your browser console automatically scrolls, bundles, and downloads your active conversation.
+              </p>
+            </div>
+
+            {/* How to use */}
+            <div style={{ marginBottom: 32 }}>
+              <p className="card-title">How to Use</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {steps.map((step, i) => (
+                  <div key={i} className="step-item">
+                    <span className="step-icon">{step.icon}</span>
+                    <div>
+                      <div className="step-title">
+                        <span className="step-number">{step.num}</span>
+                        {step.title}
+                      </div>
+                      <div className="step-detail">{step.detail}</div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: "#888", fontSize: 13 }}>Windows / Linux</span>
-              <kbd style={{
-                background: "#151525",
-                border: "1px solid #252545",
-                borderRadius: 5,
-                padding: "4px 10px",
-                fontSize: 12,
-                color: "#aaa",
-                fontFamily: "monospace",
-              }}>
-                F12
-              </kbd>
+
+            {/* Shortcut hints */}
+            <div className="card-panel">
+              <p className="card-title">Console Shortcuts</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#cbd5e1", fontSize: 14 }}>macOS (Chrome/Firefox/Safari)</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {["⌘ Cmd", "⌥ Option", "J"].map((k, idx) => (
+                      <span key={idx}>
+                        <kbd>{k}</kbd>
+                        {idx < 2 && <span style={{ color: "#475569", margin: "0 2px" }}>+</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#cbd5e1", fontSize: 14 }}>Windows / Linux</span>
+                  <kbd>F12</kbd>
+                </div>
+              </div>
             </div>
+
+            {/* Console source toggle */}
+            <details className="card-panel" style={{ cursor: "pointer" }}>
+              <summary className="card-title" style={{ userSelect: "none" }}>View full script source</summary>
+              <pre style={{
+                background: "#050508",
+                border: "1px solid rgba(255,255,255,0.05)",
+                borderRadius: 8,
+                padding: 16,
+                marginTop: 16,
+                fontSize: 11,
+                lineHeight: 1.6,
+                color: "#64748b",
+                overflow: "auto",
+                maxHeight: 300,
+                whiteSpace: "pre-wrap",
+                fontFamily: "JetBrains Mono, monospace"
+              }}>
+                {consoleCode}
+              </pre>
+            </details>
           </div>
-        </div>
+        )}
 
-        {/* Output preview */}
-        <div style={{
-          background: "#0d0d1a",
-          border: "1px solid #1a1a30",
-          borderRadius: 12,
-          padding: 28,
-          marginBottom: 40,
-        }}>
-          <p style={{ color: "#666", fontSize: 13, marginBottom: 16, marginTop: 0, letterSpacing: "0.05em" }}>
-            WHAT THE OUTPUT LOOKS LIKE
-          </p>
-          <div style={{
-            background: "#070710",
-            border: "1px solid #151530",
-            borderRadius: 8,
-            padding: 20,
-            fontSize: 13,
-            lineHeight: 1.8,
-            color: "#888",
-            whiteSpace: "pre-wrap",
-          }}>
-<span style={{color:"#6b7fff"}}># My Conversation Title</span>{"\n\n"}
-<span style={{color:"#555"}}>{"> "}Exported from ChatGPT / Claude / Gemini on 4/16/2026, 10:32:00 AM</span>{"\n\n"}
-<span style={{color:"#555"}}>---</span>{"\n\n"}
-<span style={{color:"#a0c4ff"}}>## 🧑 You</span>{"\n\n"}
-<span style={{color:"#ccc"}}>What is the capital of France?</span>{"\n\n"}
-<span style={{color:"#555"}}>---</span>{"\n\n"}
-<span style={{color:"#a8d8a8"}}>## 🤖 ChatGPT / Claude / Gemini</span>{"\n\n"}
-<span style={{color:"#ccc"}}>The capital of France is Paris...</span>
+        {/* ==================== CLAUDE CODE CLI TAB ==================== */}
+        {activeTab === "cli" && (
+          <div>
+            {/* Guide */}
+            <div className="card-panel">
+              <p className="card-title">Where to Find Your Session Files</p>
+              <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+                Claude Code CLI stores your project transcripts as local <code style={{ color: "#a78bfa" }}>.jsonl</code> files. Copy the command below for your operating system to open the folder:
+              </p>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: "600", marginBottom: 6 }}>macOS</div>
+                  <div className="path-box">
+                    <span className="path-text">open ~/.claude/projects/</span>
+                    <button 
+                      className="path-copy-btn" 
+                      onClick={() => handleCliPathCopy("open ~/.claude/projects/", "mac")}
+                    >
+                      {cliCopied === "mac" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: "600", marginBottom: 6 }}>Linux</div>
+                  <div className="path-box">
+                    <span className="path-text">xdg-open ~/.claude/projects/</span>
+                    <button 
+                      className="path-copy-btn" 
+                      onClick={() => handleCliPathCopy("xdg-open ~/.claude/projects/", "linux")}
+                    >
+                      {cliCopied === "linux" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, color: "#64748b", fontWeight: "600", marginBottom: 6 }}>Windows</div>
+                  <div className="path-box">
+                    <span className="path-text">explorer %USERPROFILE%\.claude\projects\</span>
+                    <button 
+                      className="path-copy-btn" 
+                      onClick={() => handleCliPathCopy("explorer %USERPROFILE%\\.claude\\projects\\", "win")}
+                    >
+                      {cliCopied === "win" ? "✓ Copied" : "📋 Copy"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <p style={{ color: "#64748b", fontSize: 12, marginTop: 16, lineHeight: 1.5 }}>
+                💡 <em>Tip: Each project has a subfolder. Inside, you'll find session files named like <code style={{ color: "#475569" }}>a2fc-c759...jsonl</code>. Upload the file corresponding to the chat session you wish to export.</em>
+              </p>
+            </div>
+
+            {/* Config & Dropzone */}
+            <div className="card-panel">
+              <p className="card-title">Export Settings</p>
+              
+              <div className="config-group">
+                <div className="config-item">
+                  <div className="config-info">
+                    <span className="config-label">Include Thinking Logs</span>
+                    <span className="config-subtext">Exports Claude's internal reasoning inside a collapsible element</span>
+                  </div>
+                  <label className="switch">
+                    <input 
+                      type="checkbox" 
+                      checked={includeThinking}
+                      onChange={(e) => setIncludeThinking(e.target.checked)} 
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+
+                <div className="config-item">
+                  <div className="config-info">
+                    <span className="config-label">Include Tool Executions</span>
+                    <span className="config-subtext">Exports terminal command runs, file edits, and tool results</span>
+                  </div>
+                  <label className="switch">
+                    <input 
+                      type="checkbox" 
+                      checked={includeTools}
+                      onChange={(e) => setIncludeTools(e.target.checked)} 
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Drag Zone */}
+              <div 
+                className={`dropzone ${dragActive ? "active" : ""}`}
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current.click()}
+              >
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  style={{ display: "none" }} 
+                  accept=".jsonl,.json" 
+                  onChange={handleFileChange}
+                />
+                <span className="dropzone-icon">📥</span>
+                <span className="dropzone-title">
+                  {parsedSession ? "Change session file" : "Drag & drop your Claude Code session file here"}
+                </span>
+                <span className="dropzone-desc">Supports .jsonl and .json files. Or click to browse.</span>
+              </div>
+
+              {parseError && (
+                <div style={{ color: "#ef4444", fontSize: 13, marginTop: 14, textAlign: "center", fontWeight: 500 }}>
+                  ⚠️ {parseError}
+                </div>
+              )}
+            </div>
+
+            {/* File Processed State */}
+            {parsedSession && (
+              <div style={{ animation: "fadeIn 0.4s ease" }}>
+                
+                {/* Meta details card */}
+                <div className="card-panel" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 20 }}>
+                  <div>
+                    <h3 style={{ fontSize: 18, fontWeight: 700, color: "#f8fafc", margin: "0 0 4px" }}>
+                      {parsedSession.title}
+                    </h3>
+                    <div style={{ fontSize: 13, color: "#64748b" }}>
+                      <span>📄 {parsedSession.fileName}</span>
+                      <span style={{ margin: "0 8px" }}>•</span>
+                      <span>💬 {parsedSession.messages.length} messages</span>
+                      {parsedSession.date && (
+                        <>
+                          <span style={{ margin: "0 8px" }}>•</span>
+                          <span>📅 {parsedSession.date}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <button onClick={handleDownload} className="btn-primary btn-success">
+                    💾 Download Markdown
+                  </button>
+                </div>
+
+                {/* Conversation Preview */}
+                <div style={{ marginBottom: 40 }}>
+                  <p className="card-title">Live Preview</p>
+                  
+                  <div className="preview-window">
+                    <div className="preview-header">
+                      <div>
+                        <span className="preview-dot" style={{ backgroundColor: "#ef4444" }}></span>
+                        <span className="preview-dot" style={{ backgroundColor: "#f59e0b" }}></span>
+                        <span className="preview-dot" style={{ backgroundColor: "#10b981" }}></span>
+                      </div>
+                      <span className="preview-title">{parsedSession.title}.md</span>
+                      <span style={{ width: 42 }}></span>
+                    </div>
+
+                    <div className="preview-body">
+                      {/* Top Header of Markdown */}
+                      <div style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: 16, marginBottom: 24 }}>
+                        <h2 style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", marginBottom: 8 }}># {parsedSession.title}</h2>
+                        <div style={{ color: "#64748b", fontStyle: "italic", fontSize: 12 }}>
+                          {parsedSession.date ? `> Exported from Claude Code on ${parsedSession.date}` : `> Exported from Claude Code`}
+                        </div>
+                      </div>
+
+                      {/* Message lists */}
+                      {parsedSession.messages.map((msg, idx) => {
+                        const isUser = msg.role === "## You";
+                        
+                        // Parse content blocks dynamically
+                        const renderedBlocks = isUser 
+                          ? msg.blocks 
+                          : msg.blocks.filter(b => {
+                              if (b.type === "thinking" && !includeThinking) return false;
+                              if (b.type === "tool_use" && !includeTools) return false;
+                              return true;
+                            });
+
+                        if (renderedBlocks.length === 0) return null;
+
+                        return (
+                          <div key={idx} className={`preview-chat-bubble ${isUser ? "user" : "assistant"}`}>
+                            <div className="bubble-role">{isUser ? "🧑 You" : "🤖 Claude Code"}</div>
+                            
+                            {renderedBlocks.map((block, bIdx) => {
+                              if (block.type === "text") {
+                                return <div key={bIdx} className="bubble-content">{block.text}</div>;
+                              }
+                              
+                              if (block.type === "thinking") {
+                                return (
+                                  <details key={bIdx} className="preview-thinking" open>
+                                    <summary>Thinking Process</summary>
+                                    <pre>{block.thinking}</pre>
+                                  </details>
+                                );
+                              }
+
+                              if (block.type === "tool_use") {
+                                return (
+                                  <div key={bIdx} className="preview-tool-use">
+                                    <div className="tool-name">🛠 Tool Executed: {block.name}</div>
+                                    <pre className="tool-payload">{JSON.stringify(block.input, null, 2)}</pre>
+                                  </div>
+                                );
+                              }
+
+                              return null;
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
-        {/* View full script */}
-        <details style={{
-          background: "#0d0d1a",
-          border: "1px solid #1a1a30",
-          borderRadius: 12,
-          padding: 24,
-          marginBottom: 40,
-        }}>
-          <summary style={{
-            color: "#666",
-            fontSize: 13,
-            cursor: "pointer",
-            letterSpacing: "0.05em",
-            userSelect: "none",
-          }}>
-            VIEW FULL SCRIPT SOURCE
-          </summary>
-          <pre style={{
-            background: "#070710",
-            border: "1px solid #151530",
-            borderRadius: 8,
-            padding: 16,
-            marginTop: 16,
-            fontSize: 11,
-            lineHeight: 1.6,
-            color: "#7a8a7a",
-            overflow: "auto",
-            maxHeight: 400,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}>
-            {consoleCode}
-          </pre>
-        </details>
-
-        {/* Note */}
+        {/* Footer Note */}
         <div style={{
-          borderTop: "1px solid #151520",
+          borderTop: "1px solid rgba(255,255,255,0.05)",
           paddingTop: 24,
-          color: "#444",
+          color: "#475569",
           fontSize: 12,
           lineHeight: 1.8,
+          textAlign: "center"
         }}>
-          <strong style={{ color: "#555" }}>Privacy note:</strong> The script runs entirely in your browser. No data is sent anywhere — the .md file goes straight to your Downloads folder. Works on any Claude, ChatGPT, or Gemini account you're logged into.
+          <strong>Privacy Note:</strong> This application is hosted on GitHub Pages but processes all conversations locally in your browser. Absolutely no chat history or uploaded file data is sent to external servers or tracked.
         </div>
 
       </div>
