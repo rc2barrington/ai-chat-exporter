@@ -330,6 +330,7 @@ export default function App() {
   const [includeTools, setIncludeTools] = useState(false);
   const [parsedSession, setParsedSession] = useState(null);
   const [availableSessions, setAvailableSessions] = useState([]);
+  const [selectedSessions, setSelectedSessions] = useState(new Set());
   const [dragActive, setDragActive] = useState(false);
   const [parseError, setParseError] = useState("");
 
@@ -424,6 +425,7 @@ export default function App() {
       setParseError("No valid chat messages found in any of the files.");
     } else {
       setAvailableSessions(sessions);
+      setSelectedSessions(new Set()); // Reset selections
       setParsedSession(null);
     }
   };
@@ -492,15 +494,14 @@ export default function App() {
     }
   };
 
-  const handleDownload = () => {
-    if (!parsedSession) return;
-    const md = generateMarkdown(parsedSession, includeThinking, includeTools);
+  const downloadSingleSession = (session) => {
+    const md = generateMarkdown(session, includeThinking, includeTools);
     const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     
-    const sanitizedTitle = parsedSession.title
+    const sanitizedTitle = session.title
       .replace(/[^a-z0-9]+/gi, "-")
       .replace(/^-|-$/g, "")
       .toLowerCase()
@@ -511,6 +512,41 @@ export default function App() {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const handleDownload = () => {
+    if (parsedSession) {
+      downloadSingleSession(parsedSession);
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedSessions.size === 0) return;
+    const selectedArray = availableSessions.filter((_, idx) => selectedSessions.has(idx));
+    for (const session of selectedArray) {
+      downloadSingleSession(session);
+      await new Promise(r => setTimeout(r, 200)); // Small delay to prevent browser blocking
+    }
+  };
+
+  const toggleSessionSelection = (idx, e) => {
+    e.stopPropagation();
+    const newSelected = new Set(selectedSessions);
+    if (newSelected.has(idx)) {
+      newSelected.delete(idx);
+    } else {
+      newSelected.add(idx);
+    }
+    setSelectedSessions(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedSessions.size === availableSessions.length) {
+      setSelectedSessions(new Set());
+    } else {
+      const allIds = new Set(availableSessions.map((_, i) => i));
+      setSelectedSessions(allIds);
+    }
   };
 
   return (
@@ -772,14 +808,33 @@ export default function App() {
               {!parsedSession && availableSessions.length > 0 && (
                 <div className="sessions-list" style={{ animation: "fadeIn 0.3s ease", marginTop: 24 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                    <h3 style={{ color: "#f8fafc", margin: 0 }}>Found {availableSessions.length} Sessions</h3>
-                    <button 
-                      className="btn-secondary"
-                      onClick={() => setAvailableSessions([])}
-                      style={{ fontSize: 12, padding: "6px 12px", background: "rgba(255,255,255,0.1)", border: "none", color: "#e2e8f0", borderRadius: 6, cursor: "pointer" }}
-                    >
-                      Clear
-                    </button>
+                    <h3 style={{ color: "#f8fafc", margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
+                      Found {availableSessions.length} Sessions
+                      <button 
+                        onClick={toggleSelectAll}
+                        style={{ fontSize: 12, padding: "4px 8px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", borderRadius: 4, cursor: "pointer" }}
+                      >
+                        {selectedSessions.size === availableSessions.length ? "Deselect All" : "Select All"}
+                      </button>
+                    </h3>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {selectedSessions.size > 0 && (
+                        <button 
+                          className="btn-primary btn-success"
+                          onClick={handleBulkDownload}
+                          style={{ fontSize: 13, padding: "8px 16px" }}
+                        >
+                          💾 Download {selectedSessions.size} Files
+                        </button>
+                      )}
+                      <button 
+                        className="btn-secondary"
+                        onClick={() => { setAvailableSessions([]); setSelectedSessions(new Set()); }}
+                        style={{ fontSize: 13, padding: "8px 16px", background: "rgba(255,255,255,0.1)", border: "none", color: "#e2e8f0", borderRadius: 6, cursor: "pointer" }}
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 400, overflowY: "auto", paddingRight: 8 }}>
                     {availableSessions.map((sess, idx) => (
@@ -788,9 +843,12 @@ export default function App() {
                         className="session-list-item"
                         onClick={() => setParsedSession(sess)}
                         style={{ 
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 16,
                           background: "rgba(255,255,255,0.03)", 
                           border: "1px solid rgba(255,255,255,0.06)", 
-                          padding: 16, 
+                          padding: "12px 16px", 
                           borderRadius: 8, 
                           cursor: "pointer",
                           transition: "background 0.2s"
@@ -798,11 +856,20 @@ export default function App() {
                         onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
                         onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
                       >
-                        <h4 style={{ margin: "0 0 6px", color: "#e2e8f0", fontSize: 15 }}>{sess.title}</h4>
-                        <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", gap: 12 }}>
-                          <span>📅 {sess.date || "Unknown date"}</span>
-                          <span>💬 {sess.messages.length} messages</span>
-                          <span style={{ color: "#475569" }}>📄 {sess.fileName}</span>
+                        <input 
+                          type="checkbox"
+                          checked={selectedSessions.has(idx)}
+                          onChange={(e) => toggleSessionSelection(idx, e)}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#6366f1" }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <h4 style={{ margin: "0 0 6px", color: "#e2e8f0", fontSize: 15 }}>{sess.title}</h4>
+                          <div style={{ fontSize: 12, color: "#94a3b8", display: "flex", gap: 12 }}>
+                            <span>📅 {sess.date || "Unknown date"}</span>
+                            <span>💬 {sess.messages.length} messages</span>
+                            <span style={{ color: "#475569" }}>📄 {sess.fileName}</span>
+                          </div>
                         </div>
                       </div>
                     ))}
