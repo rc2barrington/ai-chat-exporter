@@ -30,6 +30,7 @@ npm run dev
 | `npm run build:standalone` | Single self-contained `dist-standalone/index.html` (no network needed) |
 | `npm test` | Run the Vitest suite (parsers + generator) |
 | `npm run lint` | ESLint over `src/` and `tests/` |
+| `npm run deploy` | Build and publish `dist/` to the `gh-pages` branch (commit author is pinned, regardless of local git config) |
 
 ## Project layout
 
