@@ -36,8 +36,22 @@ export function BrowserChatsTab() {
 
   return (
     <div>
+      <div className="card-panel" style={{ border: "1px solid rgba(124, 58, 237, 0.3)", background: "linear-gradient(135deg, rgba(124, 58, 237, 0.05) 0%, rgba(79, 70, 229, 0.05) 100%)", marginBottom: 24 }}>
+        <p className="card-title" style={{ color: "#a78bfa", marginBottom: 12 }}>⚡ Chrome Extension (Recommended)</p>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: "#cbd5e1" }}>
+          <p style={{ marginBottom: 12, fontWeight: 500 }}>
+            Export chat tabs directly from any page without copy-pasting code into the developer console.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, textAlign: "left", background: "rgba(0, 0, 0, 0.2)", padding: 16, borderRadius: 10, border: "1px solid rgba(255, 255, 255, 0.02)", marginBottom: 10 }}>
+            <div style={{ display: "flex", gap: 8 }}><span style={{ color: "#a78bfa", fontWeight: 700 }}>1.</span> <span>Open Google Chrome and navigate to <code>chrome://extensions/</code></span></div>
+            <div style={{ display: "flex", gap: 8 }}><span style={{ color: "#a78bfa", fontWeight: 700 }}>2.</span> <span>Enable <strong>Developer mode</strong> in the upper right.</span></div>
+            <div style={{ display: "flex", gap: 8 }}><span style={{ color: "#a78bfa", fontWeight: 700 }}>3.</span> <span>Click <strong>Load unpacked</strong> and select the <code>chrome-extension/</code> folder in this project directory.</span></div>
+          </div>
+        </div>
+      </div>
+
       <div className="card-panel" style={{ textAlign: "center" }}>
-        <p className="card-title">Copy the Browser Export Script</p>
+        <p className="card-title">Or: Copy the Browser Export Script</p>
         <button onClick={handleCopy} className="btn-primary" style={{ marginBottom: 12 }}>
           {copied ? "✓ Copied to Clipboard!" : "📋 Copy Console Script"}
         </button>

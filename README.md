@@ -4,7 +4,8 @@ A utility to export your AI conversations into beautifully formatted Markdown fi
 
 ## Features
 
-- **Browser Chats** export web-based conversations from ChatGPT, Claude.ai, and Google Gemini using a paste-in console script. Dedupes by element identity, preserves fenced code blocks, and writes a YAML frontmatter header.
+- **Chrome Extension** scans open ChatGPT, Claude.ai, and Gemini tabs, activates them sequentially to bypass background throttling, and automatically exports them without manual console pasting.
+- **Browser Chats** export web-based conversations using a paste-in console script (fallback if you don't use the extension).
 - **Claude Desktop App** parses local `.jsonl` transcripts and renders thinking blocks, tool calls, and tool results (each toggleable). Supports bulk-scan of an entire `~/.claude/projects/` folder with selectable per-session export.
 - **Google Antigravity** parses `conversation_history.md` files written by the Antigravity IDE under `~/.gemini/antigravity-ide/brain/<session-uuid>/`. Drop the whole `brain/` folder to bulk-scan; pairs each session with its `.metadata.json` sidecar for accurate timestamps.
 - **Live preview** of every session, rendered with `marked` + `DOMPurify` so code blocks, lists, tables, and inline formatting display correctly.
@@ -16,10 +17,17 @@ A utility to export your AI conversations into beautifully formatted Markdown fi
 
 ## Setup
 
+### Web App Setup
 ```sh
 npm install
 npm run dev
 ```
+
+### Chrome Extension Setup
+1. Open Google Chrome and go to `chrome://extensions/`.
+2. Turn on **Developer mode** (top-right toggle).
+3. Click **Load unpacked** (top-left button).
+4. Select the `chrome-extension` directory inside this repository.
 
 ## Scripts
 

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Chat Exporter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --bg-grad: radial-gradient(circle at top, #0f0f23 0%, #050508 100%);
+        --panel-bg: rgba(15, 23, 42, 0.6);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --text-primary: #f8fafc;
+        --text-secondary: #94a3b8;
+        --accent-grad: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+        --accent-glow: rgba(124, 58, 237, 0.3);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        width: 380px;
+        min-height: 480px;
+        background: #050508;
+        background-image: var(--bg-grad);
+        color: var(--text-primary);
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        padding: 18px;
+        overflow-x: hidden;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .logo-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .logo-icon {
+        width: 28px;
+        height: 28px;
+      }
+
+      h1 {
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, #a78bfa 0%, #6366f1 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .version-badge {
+        font-size: 9px;
+        font-weight: 700;
+        background: rgba(124, 58, 237, 0.15);
+        border: 1px solid rgba(124, 58, 237, 0.3);
+        color: #a78bfa;
+        padding: 2px 6px;
+        border-radius: 9999px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .section-title {
+        color: #475569;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+        margin-top: 16px;
+      }
+
+      .card-panel {
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(8px);
+      }
+
+      /* Tabs list */
+      .tab-list-container {
+        max-height: 160px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-right: 4px;
+      }
+
+      /* Scrollbar */
+      .tab-list-container::-webkit-scrollbar {
+        width: 4px;
+      }
+      .tab-list-container::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .tab-list-container::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 2px;
+      }
+
+      .tab-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        background: rgba(15, 23, 42, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        transition: all 0.2s ease;
+      }
+
+      .tab-item:hover {
+        border-color: rgba(124, 58, 237, 0.25);
+        background: rgba(124, 58, 237, 0.03);
+      }
+
+      .tab-checkbox {
+        accent-color: #7c3aed;
+        cursor: pointer;
+        width: 15px;
+        height: 15px;
+      }
+
+      .site-badge {
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        min-width: 55px;
+        text-align: center;
+      }
+
+      .site-chatgpt {
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #34d399;
+      }
+
+      .site-claude {
+        background: rgba(249, 115, 22, 0.15);
+        border: 1px solid rgba(249, 115, 22, 0.3);
+        color: #fb923c;
+      }
+
+      .site-gemini {
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        color: #60a5fa;
+      }
+
+      .tab-title {
+        font-size: 12px;
+        font-weight: 500;
+        color: #e2e8f0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1;
+      }
+
+      /* Options toggle switches */
+      .options-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .option-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 10px;
+        background: rgba(15, 23, 42, 0.2);
+        border-radius: 8px;
+      }
+
+      .option-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .option-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #cbd5e1;
+      }
+
+      .option-desc {
+        font-size: 10px;
+        color: #64748b;
+      }
+
+      /* Toggle switch */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 36px;
+        height: 20px;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #334155;
+        transition: .2s;
+        border-radius: 20px;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 14px;
+        width: 14px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .2s;
+        border-radius: 50%;
+      }
+
+      input:checked + .slider {
+        background-color: #7c3aed;
+      }
+
+      input:checked + .slider:before {
+        transform: translateX(16px);
+      }
+
+      /* Select all bar */
+      .select-all-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        color: var(--text-secondary);
+        margin-bottom: 6px;
+        padding: 0 4px;
+      }
+
+      .select-all-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+      }
+
+      /* Action Button */
+      .action-btn {
+        width: 100%;
+        background: var(--accent-grad);
+        color: #fff;
+        border: none;
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 12px var(--accent-glow);
+        margin-top: 14px;
+      }
+
+      .action-btn:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(124, 58, 237, 0.45);
+      }
+
+      .action-btn:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      .action-btn:disabled {
+        background: #1e293b;
+        color: #475569;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+
+      /* Status Section */
+      .status-panel {
+        margin-top: 12px;
+        background: rgba(10, 10, 18, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        padding: 10px;
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        max-height: 100px;
+        overflow-y: auto;
+      }
+
+      .status-line {
+        color: #64748b;
+        margin-bottom: 4px;
+        line-height: 1.4;
+      }
+
+      .status-line.info {
+        color: #a78bfa;
+      }
+
+      .status-line.success {
+        color: #34d399;
+      }
+
+      .status-line.error {
+        color: #f87171;
+      }
+
+      .no-tabs {
+        text-align: center;
+        padding: 24px 10px;
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .no-tabs-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo-group">
+        <img src="icons/icon32.png" alt="Logo" class="logo-icon" />
+        <h1>AI Chat Exporter</h1>
+      </div>
+      <span class="version-badge">v0.1.0</span>
+    </header>
+
+    <main>
+      <!-- Detected Tabs Section -->
+      <div class="select-all-bar">
+        <label class="select-all-label" id="select-all-container" style="display: none;">
+          <input type="checkbox" id="select-all-checkbox" class="tab-checkbox" checked />
+          Select All
+        </label>
+        <span id="detected-count">Scanning...</span>
+      </div>
+
+      <div class="card-panel" style="margin-bottom: 12px;">
+        <div id="tab-list" class="tab-list-container">
+          <!-- Populated by popup.js -->
+        </div>
+      </div>
+
+      <!-- Settings Panel -->
+      <div class="section-title">Export Settings</div>
+      <div class="card-panel options-container">
+        <div class="option-row">
+          <div class="option-info">
+            <span class="option-label">Include Thinking</span>
+            <span class="option-desc">Export Claude thinking blocks</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-thinking" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="option-row">
+          <div class="option-info">
+            <span class="option-label">Include Tool Logs</span>
+            <span class="option-desc">Export tool calls & results</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-tools" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="option-row">
+          <div class="option-info">
+            <span class="option-label">Include Media</span>
+            <span class="option-desc">Save images, video, audio & files</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-media" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <button id="export-btn" class="action-btn" disabled>Export Selected Chats</button>
+      <button id="cancel-btn" class="action-btn" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25); display: none; margin-top: 8px;">Cancel Export</button>
+
+      <!-- Status Log -->
+      <div class="section-title">Status Log</div>
+      <div id="status-panel" class="status-panel">
+        <div class="status-line">System ready. Click export to begin.</div>
+      </div>
+    </main>
+
+    <!-- JSZip Library -->
+    <script src="lib/jszip.min.js"></script>
+    <!-- Extension Logic -->
+    <script src="popup.js"></script>
+  </body>
+</html>
