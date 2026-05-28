@@ -97,4 +97,30 @@ describe("parseAntigravityJsonl", () => {
     expect(out.title.startsWith("fix the bug")).toBe(true);
     expect(out.messages).toHaveLength(1);
   });
+
+  it("unwraps <USER_REQUEST> and strips IDE metadata scaffolding from user turns", () => {
+    const wrapped = JSON.stringify({
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      created_at: "2026-05-28T15:00:00Z",
+      content:
+        "<USER_REQUEST>\nAdd dark mode to the settings page\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nos: macOS\ncwd: /tmp\n</ADDITIONAL_METADATA>\n<USER_SETTINGS_CHANGE>\nmodel=fast\n</USER_SETTINGS_CHANGE>",
+    });
+    const out = parseAntigravityJsonl(wrapped, { sessionId: "deadbeef-1" });
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0].blocks[0].text).toBe("Add dark mode to the settings page");
+    expect(out.title).toBe("Add dark mode to the settings page");
+  });
+
+  it("skips a user turn that carries only settings/metadata (no real request)", () => {
+    const settingsOnly = JSON.stringify({
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      created_at: "2026-05-28T15:00:00Z",
+      content: "<USER_SETTINGS_CHANGE>\nmodel=fast\n</USER_SETTINGS_CHANGE>",
+    });
+    const out = parseAntigravityJsonl(settingsOnly, { sessionId: "abcdef12-rest" });
+    expect(out.messages).toHaveLength(0);
+    expect(out.title).toContain("abcdef12");
+  });
 });

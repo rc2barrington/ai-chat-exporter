@@ -96,6 +96,24 @@ const TOOL_OUTPUT_TYPES = new Set([
   "INVOKE_SUBAGENT",
 ]);
 
+// Antigravity wraps each user turn as:
+//   <USER_REQUEST> the real prompt </USER_REQUEST>
+//   <ADDITIONAL_METADATA> … </ADDITIONAL_METADATA>
+//   <USER_SETTINGS_CHANGE> … </USER_SETTINGS_CHANGE>
+// Keep only the request body so titles and exports show the actual message,
+// not the "<USER_REQUEST>" tag or IDE scaffolding.
+function cleanUserContent(content) {
+  if (!content) return "";
+  const m = content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i);
+  let text = m ? m[1] : content;
+  text = text
+    .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/gi, "")
+    .replace(/<USER_SETTINGS_CHANGE>[\s\S]*?<\/USER_SETTINGS_CHANGE>/gi, "")
+    // strip any leftover standalone wrapper tags
+    .replace(/^\s*<\/?[A-Za-z_][^>]*>\s*$/gm, "");
+  return text.trim();
+}
+
 export function parseAntigravityJsonl(fileContent, opts = {}) {
   const { sidecarMetadata, sessionId } = opts;
 
@@ -132,10 +150,11 @@ export function parseAntigravityJsonl(fileContent, opts = {}) {
 
     if (o.source === "USER_EXPLICIT") {
       flush();
-      if (content) {
+      const userText = cleanUserContent(content);
+      if (userText) {
         messages.push({
           role: "## You",
-          blocks: [{ type: "text", text: content }],
+          blocks: [{ type: "text", text: userText }],
           timestamp: ts,
         });
       }
@@ -233,7 +252,10 @@ function deriveTitleFromFirstUser(messages) {
   const firstUser = messages.find((m) => m.role === "## You");
   if (!firstUser) return "";
   const text = firstUser.blocks[0]?.text || "";
-  const firstLine = text.split("\n")[0].trim();
+  const firstLine = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
   if (!firstLine) return "";
   return firstLine.length > 60 ? firstLine.slice(0, 57) + "..." : firstLine;
 }
