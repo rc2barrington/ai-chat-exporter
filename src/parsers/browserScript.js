@@ -105,7 +105,7 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
         var src = child.currentSrc || child.src || child.getAttribute('src');
         var alt = (child.getAttribute('alt') || '').trim();
         var fname = enqueueMedia(src, 'image', alt);
-        var altText = alt ? ` - "${alt}"` : '';
+        var altText = alt ? ' - "' + alt + '"' : '';
         if (fname) {
           out += '\\n\\n![' + alt + '](media/' + fname + ')\\n*(Uploaded Image: \`media/' + fname + '\`' + altText + ')*\\n\\n';
         } else {
@@ -338,7 +338,7 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
     if (!failedFilenames.size) return;
     failedFetches.forEach(function(f) {
       var needle = 'media/' + f.filename;
-      // Replace [text](media/file) with [text \[fetch failed\]](originalUrl)
+      // Replace [text](media/file) with [text [fetch failed]](originalUrl)
       var re = new RegExp('\\\\]\\\\(' + needle.replace(/[.*+?^\${}()|[\\]\\\\]/g, '\\\\$&') + '\\\\)', 'g');
       m.text = m.text.replace(re, '] [fetch failed](' + f.url + ')');
     });
