@@ -7,7 +7,7 @@ A utility to export your AI conversations into beautifully formatted Markdown fi
 - **Chrome Extension** scans open ChatGPT, Claude.ai, and Gemini tabs, activates them sequentially to bypass background throttling, and automatically exports them without manual console pasting.
 - **Browser Chats** export web-based conversations using a paste-in console script (fallback if you don't use the extension).
 - **Claude Desktop App** parses local `.jsonl` transcripts and renders thinking blocks, tool calls, and tool results (each toggleable). Supports bulk-scan of an entire `~/.claude/projects/` folder with selectable per-session export.
-- **Google Antigravity** parses `conversation_history.md` files written by the Antigravity IDE under `~/.gemini/antigravity-ide/brain/<session-uuid>/`. A one-click **Open my Antigravity chats** button (File System Access API) lets you grant the `brain/` folder once; the browser remembers the directory handle so future clicks reopen it straight away with no re-navigating (falls back to drag-and-drop where the API is unavailable). Bulk-scans every session and pairs each with its `.metadata.json` sidecar for accurate timestamps.
+- **Google Antigravity** parses both transcript formats the IDE writes under `~/.gemini/antigravity/brain/<session-uuid>/`: newer builds' `.system_generated/logs/transcript.jsonl` (with thinking, tool calls, and tool results, each toggleable) and older builds' `conversation_history.md`. A one-click **Open my Antigravity chats** button (File System Access API) lets you grant the `brain/` folder once; the browser remembers the directory handle so future clicks reopen it straight away with no re-navigating (falls back to drag-and-drop where the API is unavailable). Bulk-scans every session and pairs each markdown transcript with its `.metadata.json` sidecar for accurate timestamps.
 - **Live preview** of every session, rendered with `marked` + `DOMPurify` so code blocks, lists, tables, and inline formatting display correctly.
 - **Bulk export to `.zip`** via JSZip (single-prompt save instead of N separate downloads).
 - **Copy as Markdown** alongside the existing Download button.
@@ -87,7 +87,19 @@ Each line is one JSON object. Recognized shapes:
 
 Block types rendered: `text`, `thinking`, `tool_use`, `tool_result`. Consecutive assistant entries sharing a `requestId` are merged. `tool_result` blocks that arrive inside a "user" turn are attached to the preceding assistant turn rather than emitted as a "You" message.
 
-### Antigravity `conversation_history.md`
+### Antigravity `transcript.jsonl` (newer builds)
+
+Stored at `~/.gemini/antigravity/brain/<uuid>/.system_generated/logs/transcript.jsonl`. One JSON object per line:
+
+```jsonc
+{ "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "created_at": "ISO", "content": "string" }
+{ "step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE", "thinking": "string", "content": "string", "tool_calls": [{ "name": "view_file", "args": {} }] }
+{ "step_index": 3, "source": "MODEL", "type": "RUN_COMMAND", "status": "DONE", "content": "tool output" }
+```
+
+`USER_EXPLICIT` lines become "You" turns. Consecutive `MODEL` lines merge into one assistant turn: `thinking` → thinking block, `tool_calls` → tool_use blocks, and `content` → a text block (or a tool_result block for tool-output step types like `RUN_COMMAND` / `VIEW_FILE` / `GREP_SEARCH`). `SYSTEM` lines (ephemeral status, checkpoints, history dumps) are skipped. `startedAt` / `endedAt` come from the min/max `created_at`.
+
+### Antigravity `conversation_history.md` (older builds)
 
 ```
 # Conversation History
