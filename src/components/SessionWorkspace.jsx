@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dropzone } from "./Dropzone.jsx";
 import { SessionList } from "./SessionList.jsx";
 import { SessionPreview } from "./SessionPreview.jsx";
@@ -7,6 +7,13 @@ import { readFileAsText } from "../utils/files.js";
 import { generateMarkdown } from "../generators/markdown.js";
 import { downloadBlob, sanitizeFilename, copyToClipboard } from "../utils/download.js";
 import { bundleZip } from "../utils/zip.js";
+import {
+  isFsAccessSupported,
+  getSavedDirectory,
+  verifyPermission,
+  pickDirectory,
+  collectFiles,
+} from "../utils/dirHandle.js";
 
 // Shared workspace UI for any file-based source (Claude Desktop, Antigravity).
 // Pass:
@@ -14,7 +21,7 @@ import { bundleZip } from "../utils/zip.js";
 //   parseFile(file)   async (file: File) => parsedSession | null
 //   showToolToggles   bool — Claude Desktop has tool_use/tool_result; Antigravity doesn't
 //   sourceLabel       header text for the dropzone
-export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLabel }) {
+export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLabel, folderAccess }) {
   const [includeThinking, setIncludeThinking] = useState(true);
   const [includeTools, setIncludeTools] = useState(false);
   const [includeResults, setIncludeResults] = useState(false);
@@ -25,6 +32,25 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
   const [selected, setSelected] = useState(new Set());
   const [parseError, setParseError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [dirBusy, setDirBusy] = useState(false);
+  const [dirError, setDirError] = useState("");
+  const [dirRemembered, setDirRemembered] = useState(false);
+
+  const fsSupported = isFsAccessSupported();
+  const showFolderAccess = !!folderAccess && fsSupported;
+
+  // On mount, note whether we've already remembered this folder so the button
+  // can read "reload" instead of "open".
+  useEffect(() => {
+    if (!showFolderAccess) return;
+    let cancelled = false;
+    getSavedDirectory(folderAccess.id).then((h) => {
+      if (!cancelled && h) setDirRemembered(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showFolderAccess, folderAccess]);
 
   const opts = { includeThinking, includeTools, includeResults, truncateChars: Number(truncateChars) || 0, frontmatter };
 
@@ -42,7 +68,9 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
     for (const file of valid) {
       try {
         const text = await readFileAsText(file);
-        const parsed = await parseFile(file, text, valid);
+        // Pass the full file set (not just `valid`) so parsers can find
+        // sidecar files of other extensions (e.g. Antigravity's .metadata.json).
+        const parsed = await parseFile(file, text, files);
         if (parsed && parsed.messages && parsed.messages.length > 0) {
           results.push({ ...parsed, fileName: file.name });
         }
@@ -120,6 +148,39 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
     setParseError("");
   };
 
+  // One-click open of a remembered folder (or pick it the first time).
+  const openFolder = async () => {
+    if (!folderAccess) return;
+    setParseError("");
+    setDirError("");
+    setDirBusy(true);
+    try {
+      let handle = await getSavedDirectory(folderAccess.id);
+      if (handle && !(await verifyPermission(handle, "read"))) {
+        handle = null; // permission lost/denied — fall back to the picker
+      }
+      if (!handle) {
+        const startIn = await getSavedDirectory(folderAccess.id);
+        handle = await pickDirectory(folderAccess.id, startIn);
+      }
+      if (!handle) return;
+      setDirRemembered(true);
+      const files = await collectFiles(handle, folderAccess.include);
+      if (files.length === 0) {
+        setDirError(`No ${sourceLabel} files found in "${handle.name}". Pick the folder that contains your conversations.`);
+        return;
+      }
+      await processFiles(files);
+    } catch (err) {
+      // User dismissing the picker throws AbortError — that's not an error.
+      if (!err || err.name !== "AbortError") {
+        setDirError((err && err.message) || "Could not open that folder.");
+      }
+    } finally {
+      setDirBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="card-panel">
@@ -183,12 +244,41 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
         </div>
 
         {!parsedSession && availableSessions.length === 0 && (
-          <Dropzone
-            accept={accept}
-            onFiles={processFiles}
-            title={`Drag & drop your ${sourceLabel} file(s) here`}
-            description={`Supports ${accept}. Drop a folder to scan everything inside.`}
-          />
+          <>
+            {showFolderAccess && (
+              <div style={{ textAlign: "center", marginBottom: 18 }}>
+                <button
+                  onClick={openFolder}
+                  className="btn-primary"
+                  disabled={dirBusy}
+                  style={{ opacity: dirBusy ? 0.6 : 1, cursor: dirBusy ? "default" : "pointer" }}
+                >
+                  {dirBusy
+                    ? "⏳ Opening…"
+                    : dirRemembered
+                      ? `🔄 ${folderAccess.reopenLabel || folderAccess.label}`
+                      : `📂 ${folderAccess.label}`}
+                </button>
+                <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6, marginTop: 10, maxWidth: 520, marginInline: "auto" }}>
+                  {folderAccess.hint}
+                </p>
+                {dirError && (
+                  <div style={{ color: "#ef4444", fontSize: 13, marginTop: 10, fontWeight: 500 }}>⚠️ {dirError}</div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px auto 4px", maxWidth: 360, color: "#475569", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>
+                  <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
+                  or drag manually
+                  <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
+                </div>
+              </div>
+            )}
+            <Dropzone
+              accept={accept}
+              onFiles={processFiles}
+              title={`Drag & drop your ${sourceLabel} file(s) here`}
+              description={`Supports ${accept}. Drop a folder to scan everything inside.`}
+            />
+          </>
         )}
 
         {!parsedSession && availableSessions.length > 0 && (

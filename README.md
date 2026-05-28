@@ -7,7 +7,7 @@ A utility to export your AI conversations into beautifully formatted Markdown fi
 - **Chrome Extension** scans open ChatGPT, Claude.ai, and Gemini tabs, activates them sequentially to bypass background throttling, and automatically exports them without manual console pasting.
 - **Browser Chats** export web-based conversations using a paste-in console script (fallback if you don't use the extension).
 - **Claude Desktop App** parses local `.jsonl` transcripts and renders thinking blocks, tool calls, and tool results (each toggleable). Supports bulk-scan of an entire `~/.claude/projects/` folder with selectable per-session export.
-- **Google Antigravity** parses `conversation_history.md` files written by the Antigravity IDE under `~/.gemini/antigravity-ide/brain/<session-uuid>/`. Drop the whole `brain/` folder to bulk-scan; pairs each session with its `.metadata.json` sidecar for accurate timestamps.
+- **Google Antigravity** parses `conversation_history.md` files written by the Antigravity IDE under `~/.gemini/antigravity-ide/brain/<session-uuid>/`. A one-click **Open my Antigravity chats** button (File System Access API) lets you grant the `brain/` folder once; the browser remembers the directory handle so future clicks reopen it straight away with no re-navigating (falls back to drag-and-drop where the API is unavailable). Bulk-scans every session and pairs each with its `.metadata.json` sidecar for accurate timestamps.
 - **Live preview** of every session, rendered with `marked` + `DOMPurify` so code blocks, lists, tables, and inline formatting display correctly.
 - **Bulk export to `.zip`** via JSZip (single-prompt save instead of N separate downloads).
 - **Copy as Markdown** alongside the existing Download button.
@@ -54,6 +54,7 @@ src/
   utils/
     download.js                 sanitizeFilename, downloadBlob, copyToClipboard
     files.js                    recursive folder reading via webkitGetAsEntry
+    dirHandle.js                File System Access API: pick + remember a folder (IndexedDB), recursive collect
     markdownRender.js           marked + DOMPurify for the live preview
     zip.js                      JSZip bundler with filename de-duplication
   components/

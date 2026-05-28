@@ -27,6 +27,16 @@ export function AntigravityTab() {
         accept=".md"
         showToolToggles={false}
         sourceLabel="Antigravity conversation_history.md"
+        folderAccess={{
+          id: "antigravity-brain",
+          label: "Open my Antigravity chats",
+          reopenLabel: "Reload my Antigravity chats",
+          hint: "Click once and choose your ~/.gemini/antigravity-ide/brain/ folder. Your browser remembers it, so next time this opens straight to your chats (no navigating). Everything stays on your machine.",
+          include: (name) => {
+            const n = name.toLowerCase();
+            return n.endsWith("conversation_history.md") || n.endsWith("conversation_history.md.metadata.json");
+          },
+        }}
         parseFile={async (file, text, allFiles) => {
           if (!file.name.toLowerCase().endsWith("conversation_history.md")) {
             // Skip stray markdown files (e.g. .resolved siblings or scratch notes)
