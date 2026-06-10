@@ -313,18 +313,52 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
     for (var i = 0; i < mediaQueue.length; i++) {
       var item = mediaQueue[i];
       try {
-        var res = await fetch(item.url, { credentials: 'include', mode: 'cors' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        var blob = await res.blob();
-        // Upgrade extension based on MIME type if we previously guessed wrong.
+        var blob = null;
+
+        // blob: URLs (Gemini generated images, etc.) can't be fetched — capture via canvas.
+        if (item.url.startsWith('blob:')) {
+          if (item.kind === 'image') {
+            var imgEl = null;
+            var allImgs = document.querySelectorAll('img');
+            for (var j = 0; j < allImgs.length; j++) {
+              if (allImgs[j].src === item.url) { imgEl = allImgs[j]; break; }
+            }
+            if (imgEl && imgEl.naturalWidth) {
+              var cvs = document.createElement('canvas');
+              cvs.width = imgEl.naturalWidth;
+              cvs.height = imgEl.naturalHeight;
+              cvs.getContext('2d').drawImage(imgEl, 0, 0);
+              blob = await new Promise(function(resolve) { cvs.toBlob(resolve, 'image/png'); });
+            }
+          } else if (item.kind === 'video') {
+            var vidEl = null;
+            var allVids = document.querySelectorAll('video');
+            for (var j2 = 0; j2 < allVids.length; j2++) {
+              var v = allVids[j2];
+              var vSrc = v.src || (v.querySelector('source') && v.querySelector('source').src) || '';
+              if (vSrc === item.url) { vidEl = v; break; }
+            }
+            if (vidEl && vidEl.videoWidth) {
+              var cvs2 = document.createElement('canvas');
+              cvs2.width = vidEl.videoWidth;
+              cvs2.height = vidEl.videoHeight;
+              cvs2.getContext('2d').drawImage(vidEl, 0, 0);
+              blob = await new Promise(function(resolve) { cvs2.toBlob(resolve, 'image/png'); });
+            }
+          }
+          if (!blob || !blob.size) throw new Error('blob URL canvas capture failed');
+        } else {
+          var res = await fetch(item.url, { credentials: 'include', mode: 'cors' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          blob = await res.blob();
+        }
+
         var ext = extFromMime(blob.type);
         if (ext && !item.filename.toLowerCase().endsWith(ext)) {
           var stem = item.filename.replace(/\\.[a-z0-9]{1,5}$/i, '');
           item.filename = stem + ext;
         }
         savedMedia.push({ filename: item.filename, blob: blob });
-        // Rewrite any markdown reference to use the (possibly updated) filename.
-        // We replace by url-derived original filename in messages text:
       } catch (err) {
         console.warn('[Exporter] Fetch failed for', item.url, err);
         failedFetches.push({ url: item.url, filename: item.filename, error: String(err.message || err) });

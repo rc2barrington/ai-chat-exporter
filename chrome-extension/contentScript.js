@@ -45,6 +45,35 @@
     }
   }
 
+  // ----- Pop-out-on-hide -----
+  // When the export tab is backgrounded, browsers throttle timers and pause
+  // virtualization/IntersectionObserver, which stalls scrolling. We move the tab to
+  // its own (unfocused) window so document.hidden becomes false and layout stays live.
+  //
+  // Previously this only fired from inside the scroll loops (via ensureVisible), so it
+  // depended on the tab being hidden at the exact moment one of those awaits ran. Sites
+  // with short/fast scroll phases (e.g. Gemini) could get backgrounded between phases —
+  // or during the media-fetch loop, which never calls ensureVisible — and never pop out.
+  // Listening on visibilitychange makes the pop-out fire the instant the user clicks away,
+  // regardless of which phase the export is in.
+  let popOutRequested = false;
+
+  function requestPopOut() {
+    if (popOutRequested || !document.hidden) return;
+    popOutRequested = true;
+    try {
+      chrome.runtime.sendMessage({ action: "popOutTab" }, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch (e) {
+      // Ignore if context is invalidated
+    }
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden) requestPopOut();
+  }
+
   // Listen for the run message from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (!request) return;
@@ -53,10 +82,12 @@
       runExport(request.options)
         .then(result => {
           stopKeepAlive();
+          document.removeEventListener('visibilitychange', onVisibilityChange);
           sendResponse({ status: "success", data: result });
         })
         .catch(err => {
           stopKeepAlive();
+          document.removeEventListener('visibilitychange', onVisibilityChange);
           sendResponse({ status: "error", error: err.message || String(err) });
         });
       return true; // Keep message channel open for async response
@@ -86,6 +117,13 @@
 
     const siteName = isChatGPT ? "ChatGPT" : (isClaude ? "Claude" : "Gemini");
     updateProgress(`Detected ${siteName} tab. Scanning scroll container...`);
+
+    // Pop out the moment the tab is backgrounded, for the whole export — not just while
+    // a scroll loop happens to be awaiting. Covers gaps between phases and the media-fetch
+    // loop, where Gemini exports were previously getting stuck without popping out.
+    popOutRequested = false;
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    requestPopOut(); // in case the tab is already hidden when the export starts
 
     // ----- Find scroll container, force-load all turns -----
     let firstMsg;
@@ -153,22 +191,9 @@
 
     async function ensureVisible() {
       if (!document.hidden) return;
-      
+
       updateProgress("Export tab backgrounded. Popping out tab to a temporary background window to keep layout and scrolling active...");
-      
-      try {
-        await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ action: "popOutTab" }, (res) => {
-            if (chrome.runtime.lastError) {
-              reject(new Error(chrome.runtime.lastError.message));
-            } else {
-              resolve(res);
-            }
-          });
-        });
-      } catch (e) {
-        console.error("Failed to request tab pop out:", e);
-      }
+      requestPopOut(); // no-op if the visibilitychange listener already requested it
 
       // Wait for Chrome to transfer the window and activate layout rendering (hidden becomes false)
       let checks = 0;
@@ -539,16 +564,50 @@
         const item = localQueue[i];
         updateProgress(`Fetching local attachment ${i+1}/${localQueue.length}: ${item.filename}...`);
         try {
-          const res = await fetch(item.url);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          const blob = await res.blob();
+          let blob = null;
+
+          if (item.url.startsWith('blob:')) {
+            // blob: URLs (Gemini generated images, etc.) often can't be fetched — try canvas first.
+            if (item.kind === 'image') {
+              const imgEl = Array.from(document.querySelectorAll('img')).find(el => el.src === item.url);
+              if (imgEl && imgEl.naturalWidth) {
+                const cvs = document.createElement('canvas');
+                cvs.width = imgEl.naturalWidth;
+                cvs.height = imgEl.naturalHeight;
+                cvs.getContext('2d').drawImage(imgEl, 0, 0);
+                blob = await new Promise(resolve => cvs.toBlob(resolve, 'image/png'));
+              }
+            } else if (item.kind === 'video') {
+              const vidEl = Array.from(document.querySelectorAll('video')).find(el => {
+                const s = el.src || (el.querySelector('source') && el.querySelector('source').src) || '';
+                return s === item.url;
+              });
+              if (vidEl && vidEl.videoWidth) {
+                const cvs = document.createElement('canvas');
+                cvs.width = vidEl.videoWidth;
+                cvs.height = vidEl.videoHeight;
+                cvs.getContext('2d').drawImage(vidEl, 0, 0);
+                blob = await new Promise(resolve => cvs.toBlob(resolve, 'image/png'));
+              }
+            }
+            // Fall back to fetch if canvas didn't work (e.g. data: URLs or other blob types)
+            if (!blob || !blob.size) {
+              const res = await fetch(item.url);
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              blob = await res.blob();
+            }
+          } else {
+            const res = await fetch(item.url);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            blob = await res.blob();
+          }
+
           const ext = extFromMime(blob.type);
           if (ext && !item.filename.toLowerCase().endsWith(ext)) {
             const stem = item.filename.replace(/\.[a-z0-9]{1,5}$/i, '');
             item.filename = stem + ext;
           }
 
-          // Convert blob to base64 for message passing
           const base64Data = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result.split(',')[1]);
