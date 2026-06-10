@@ -43,7 +43,9 @@ export function AntigravityTab() {
           id: "antigravity-brain",
           label: "Open my Antigravity chats",
           reopenLabel: "Reload my Antigravity chats",
-          hint: "Click once and choose your ~/.gemini/antigravity/brain/ folder. Your browser remembers it, so next time this opens straight to your chats (no navigating). Everything stays on your machine.",
+          hint: "Click once and choose your ~/.gemini/antigravity/brain/ folder. The folder is hidden, so in the file dialog press ⌘⇧G (Cmd+Shift+G) and type ~/.gemini/antigravity/brain to jump straight to it. Your browser remembers it, so next time this opens straight to your chats. Everything stays on your machine.",
+          emptyHint:
+            "That folder has no Antigravity transcripts in it. Your chats live in ~/.gemini/antigravity/brain/ — note there may be other empty folders also named \"antigravity\" (e.g. in Documents); those are not the right one. Reopen the picker, press ⌘⇧G, and type ~/.gemini/antigravity/brain to land on the correct folder.",
           include: (name) => {
             const n = name.toLowerCase();
             return (

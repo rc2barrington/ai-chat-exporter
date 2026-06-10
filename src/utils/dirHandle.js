@@ -68,6 +68,23 @@ export async function rememberDirectory(id, handle) {
   }
 }
 
+// Drop a remembered handle. Used when a saved handle turns out to be unusable
+// (e.g. the folder was moved, or the browser refuses to enumerate it) so we
+// don't silently reuse the dead handle on every later visit.
+export async function forgetDirectory(id) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Nothing we can do if IndexedDB is unavailable.
+  }
+}
+
 // Ensure we still have read permission for a saved handle. Chrome may downgrade
 // a previously-granted permission to "prompt" across page loads; requestPermission
 // re-grants it from within the click handler.
