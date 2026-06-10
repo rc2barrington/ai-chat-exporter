@@ -41,6 +41,18 @@
 
 const SECTION_RE = /^##\s+(User Message|Assistant Response)\s+(\d+)\s*$/m;
 
+// Derive the session UUID from a transcript path. The .jsonl lives at
+// .../brain/<uuid>/.system_generated/logs/transcript.jsonl, so the UUID is the
+// segment right before ".system_generated". For conversation_history.md — or a
+// transcript.jsonl that was mirrored out to a flat <uuid>/transcript.jsonl
+// layout — it's the immediate parent folder.
+export function deriveSessionId(relativePath) {
+  const parts = String(relativePath || "").split("/").filter(Boolean);
+  const sysIdx = parts.indexOf(".system_generated");
+  if (sysIdx > 0) return parts[sysIdx - 1];
+  return parts.length >= 2 ? parts[parts.length - 2] : "";
+}
+
 export function parseAntigravityMd(fileContent, opts = {}) {
   const { sidecarMetadata, sessionId } = opts;
 

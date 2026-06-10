@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { parseAntigravityMd, parseAntigravityJsonl } from "../src/parsers/antigravity.js";
+import { parseAntigravityMd, parseAntigravityJsonl, deriveSessionId } from "../src/parsers/antigravity.js";
+
+describe("deriveSessionId", () => {
+  it("takes the segment before .system_generated for the native layout", () => {
+    expect(
+      deriveSessionId("brain/0a1b2c3d-aaaa-bbbb-cccc-1234567890ab/.system_generated/logs/transcript.jsonl")
+    ).toBe("0a1b2c3d-aaaa-bbbb-cccc-1234567890ab");
+  });
+
+  it("falls back to the parent folder for mirrored/flat layouts", () => {
+    expect(deriveSessionId("antigravity-transcripts/0a1b2c3d/transcript.jsonl")).toBe("0a1b2c3d");
+    expect(deriveSessionId("brain/0a1b2c3d/conversation_history.md")).toBe("0a1b2c3d");
+  });
+
+  it("returns empty for a bare filename", () => {
+    expect(deriveSessionId("transcript.jsonl")).toBe("");
+    expect(deriveSessionId("")).toBe("");
+  });
+});
 
 const sample = `# Conversation History
 

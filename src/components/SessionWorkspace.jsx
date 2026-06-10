@@ -24,7 +24,9 @@ import {
 //   parseFile(file)   async (file: File) => parsedSession | null
 //   showToolToggles   bool — Claude Desktop has tool_use/tool_result; Antigravity doesn't
 //   sourceLabel       header text for the dropzone
-export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLabel, folderAccess }) {
+//   noMatchHelp       optional node rendered when a scan yields zero sessions,
+//                     for sources whose files browsers tend to miss (hidden dirs)
+export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLabel, folderAccess, noMatchHelp }) {
   const [includeThinking, setIncludeThinking] = useState(true);
   const [includeTools, setIncludeTools] = useState(false);
   const [includeResults, setIncludeResults] = useState(false);
@@ -38,6 +40,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
   const [dirBusy, setDirBusy] = useState(false);
   const [dirError, setDirError] = useState("");
   const [dirRemembered, setDirRemembered] = useState(false);
+  const [showNoMatchHelp, setShowNoMatchHelp] = useState(false);
 
   const fsSupported = isFsAccessSupported();
   const showFolderAccess = !!folderAccess && fsSupported;
@@ -59,11 +62,13 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
 
   const processFiles = async (files) => {
     setParseError("");
+    setShowNoMatchHelp(false);
     if (!files || files.length === 0) return;
     const exts = accept.split(",").map((s) => s.trim().toLowerCase());
     const valid = files.filter((f) => exts.some((ext) => f.name.toLowerCase().endsWith(ext)));
     if (valid.length === 0) {
       setParseError(`No valid ${accept} files found.`);
+      setShowNoMatchHelp(true);
       return;
     }
 
@@ -84,6 +89,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
 
     if (results.length === 0) {
       setParseError("No valid chat messages found.");
+      setShowNoMatchHelp(true);
       return;
     }
 
@@ -154,6 +160,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
     setAvailableSessions([]);
     setSelected(new Set());
     setParseError("");
+    setShowNoMatchHelp(false);
   };
 
   // One-click open of a remembered folder (or pick it the first time).
@@ -161,6 +168,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
     if (!folderAccess) return;
     setParseError("");
     setDirError("");
+    setShowNoMatchHelp(false);
     setDirBusy(true);
     try {
       let handle = await getSavedDirectory(folderAccess.id);
@@ -175,15 +183,16 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
       setDirRemembered(true);
       const files = await collectFiles(handle, folderAccess.include);
       if (files.length === 0) {
-        // The browser handed back a handle but the folder yielded nothing. This
-        // happens when the picked folder is genuinely empty, was moved, OR the
-        // browser refuses to enumerate it (Chrome restricts hidden/system folders
-        // like ~/.gemini even after you select them). Reusing this handle on the
-        // next visit would just fail again, so forget it and steer the user to the
-        // drag-and-drop box below, which reads folders via a different mechanism
-        // that isn't subject to that restriction.
+        // The browser handed back a handle but the folder yielded nothing —
+        // either the picked folder is genuinely empty/was moved, or Chrome
+        // blocked the pick of a hidden folder and returned an unenumerable
+        // handle. (Note the FSA walk itself does list dot-entries; it's the
+        // drag-and-drop and <input webkitdirectory> paths that silently skip
+        // hidden folders.) Reusing this handle on the next visit would just
+        // fail again, so forget it and show the source's rescue help.
         await forgetDirectory(folderAccess.id);
         setDirRemembered(false);
+        setShowNoMatchHelp(true);
         setDirError(
           folderAccess.emptyHint ||
             `No ${sourceLabel} files found in "${handle.name}". Pick the folder that contains your conversations.`
@@ -285,6 +294,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
                 {dirError && (
                   <div style={{ color: "#ef4444", fontSize: 13, marginTop: 10, fontWeight: 500 }}>⚠️ {dirError}</div>
                 )}
+                {dirError && showNoMatchHelp && noMatchHelp}
                 <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px auto 4px", maxWidth: 360, color: "#475569", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>
                   <span style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.08)" }} />
                   or drag manually
@@ -318,6 +328,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
             ⚠️ {parseError}
           </div>
         )}
+        {parseError && showNoMatchHelp && noMatchHelp}
       </div>
 
       {parsedSession && (
