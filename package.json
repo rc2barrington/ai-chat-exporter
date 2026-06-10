@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist -b gh-pages -u \"Bob <rc2barrington@users.noreply.github.com>\" -m \"Deploy site\""
+    "deploy": "gh-pages -d dist -b gh-pages -u \"rc2barrington <rc2barrington@users.noreply.github.com>\" -m \"Deploy site\""
   },
   "dependencies": {
     "dompurify": "^3.4.5",
