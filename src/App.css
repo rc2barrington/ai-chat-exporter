@@ -586,3 +586,109 @@ select option {
   background: #0f172a;
   color: #e2e8f0;
 }
+
+/* Search Highlights */
+.preview-highlight {
+  background-color: #fef08a !important;
+  color: #000000 !important;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.preview-search-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.preview-search-input {
+  flex: 1;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.preview-search-input:focus {
+  border-color: #7c3aed;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.preview-search-stats {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+/* Print Styles */
+@media print {
+  body, .app-container {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+  }
+  .max-width-wrapper {
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+  .tab-container,
+  .card-panel,
+  .config-group,
+  header,
+  footer,
+  button,
+  select,
+  .header-badge,
+  .title-primary,
+  .subtitle,
+  input,
+  .path-box {
+    display: none !important;
+  }
+  .preview-window {
+    border: none !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+  .preview-header {
+    display: none !important;
+  }
+  .preview-body {
+    max-height: none !important;
+    overflow-y: visible !important;
+    padding: 0 !important;
+  }
+  .preview-chat-bubble {
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    color: black !important;
+    page-break-inside: avoid;
+  }
+  .bubble-content {
+    color: black !important;
+  }
+  .markdown-body {
+    color: black !important;
+  }
+  .markdown-body code {
+    background: #f1f5f9 !important;
+    color: black !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  .markdown-body pre {
+    background: #f8fafc !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+  .markdown-body pre code {
+    color: black !important;
+  }
+}
+

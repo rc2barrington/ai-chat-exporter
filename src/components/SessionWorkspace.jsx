@@ -5,7 +5,9 @@ import { SessionPreview } from "./SessionPreview.jsx";
 import { Switch } from "./Switch.jsx";
 import { readFileAsText } from "../utils/files.js";
 import { generateMarkdown } from "../generators/markdown.js";
+import { generateHtml } from "../generators/html.js";
 import { downloadBlob, sanitizeFilename, copyToClipboard } from "../utils/download.js";
+import { StatsPanel } from "./StatsPanel.jsx";
 import { bundleZip } from "../utils/zip.js";
 import {
   isFsAccessSupported,
@@ -13,6 +15,7 @@ import {
   verifyPermission,
   pickDirectory,
   collectFiles,
+  forgetDirectory,
 } from "../utils/dirHandle.js";
 
 // Shared workspace UI for any file-based source (Claude Desktop, Antigravity).
@@ -105,6 +108,11 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
     downloadBlob(`${sanitizeFilename(session.title, "export")}.md`, md);
   };
 
+  const downloadSingleHtml = (session) => {
+    const html = generateHtml(session, opts);
+    downloadBlob(`${sanitizeFilename(session.title, "export")}.html`, html, "text/html;charset=utf-8");
+  };
+
   const handleCopy = async () => {
     if (!parsedSession) return;
     const md = generateMarkdown(parsedSession, opts);
@@ -167,7 +175,19 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
       setDirRemembered(true);
       const files = await collectFiles(handle, folderAccess.include);
       if (files.length === 0) {
-        setDirError(`No ${sourceLabel} files found in "${handle.name}". Pick the folder that contains your conversations.`);
+        // The browser handed back a handle but the folder yielded nothing. This
+        // happens when the picked folder is genuinely empty, was moved, OR the
+        // browser refuses to enumerate it (Chrome restricts hidden/system folders
+        // like ~/.gemini even after you select them). Reusing this handle on the
+        // next visit would just fail again, so forget it and steer the user to the
+        // drag-and-drop box below, which reads folders via a different mechanism
+        // that isn't subject to that restriction.
+        await forgetDirectory(folderAccess.id);
+        setDirRemembered(false);
+        setDirError(
+          folderAccess.emptyHint ||
+            `No ${sourceLabel} files found in "${handle.name}". Pick the folder that contains your conversations.`
+        );
         return;
       }
       await processFiles(files);
@@ -317,7 +337,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
                 )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <button
                 onClick={availableSessions.length > 0 ? () => setParsedSession(null) : reset}
                 className="btn-secondary"
@@ -339,8 +359,20 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
               <button onClick={() => downloadSingle(parsedSession)} className="btn-primary btn-success">
                 💾 Download Markdown
               </button>
+              <button
+                onClick={() => downloadSingleHtml(parsedSession)}
+                className="btn-primary"
+                style={{
+                  background: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+                  boxShadow: "0 4px 20px rgba(59, 130, 246, 0.25)"
+                }}
+              >
+                🌐 Download Standalone HTML
+              </button>
             </div>
           </div>
+
+          <StatsPanel session={parsedSession} />
 
           <div style={{ marginBottom: 40 }}>
             <p className="card-title">Live Preview</p>
