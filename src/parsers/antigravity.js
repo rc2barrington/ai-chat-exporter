@@ -106,6 +106,8 @@ const TOOL_OUTPUT_TYPES = new Set([
   "SEARCH_WEB",
   "READ_URL_CONTENT",
   "INVOKE_SUBAGENT",
+  "GENERATE_IMAGE",
+  "ASK_QUESTION",
 ]);
 
 // Antigravity wraps each user turn as:
@@ -183,21 +185,31 @@ export function parseAntigravityJsonl(fileContent, opts = {}) {
       if (Array.isArray(o.tool_calls)) {
         for (const tc of o.tool_calls) {
           if (!tc) continue;
+          const args = { ...(tc.args ?? {}) };
+          delete args.toolAction;
+          delete args.toolSummary;
           current.blocks.push({
             type: "tool_use",
             id: "",
             name: tc.name || o.type || "tool",
-            input: tc.args ?? {},
+            input: args,
           });
         }
       }
 
       if (content) {
         if (TOOL_OUTPUT_TYPES.has(o.type)) {
+          let resultContent = content;
+          if (o.type === "GENERATE_IMAGE") {
+            resultContent = resultContent
+              .replace(/^\s*Do not output the path.*$/gm, "")
+              .replace(/^\s*However, you can embed.*$/gm, "")
+              .trim();
+          }
           current.blocks.push({
             type: "tool_result",
             tool_use_id: "",
-            content,
+            content: resultContent,
             is_error: o.status === "ERROR",
           });
         } else {
