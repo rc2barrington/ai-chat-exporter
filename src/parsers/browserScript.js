@@ -223,25 +223,17 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
     return scrollEl === document.documentElement ? window.innerHeight : scrollEl.clientHeight;
   }
 
-  console.log('[Exporter] Scrolling to load all messages...');
-  scrollTopTo(0);
-  await new Promise(function(r) { setTimeout(r, 500); });
+  // ----- Progress banner (fixed at bottom, visible throughout export) -----
+  var banner = document.createElement('div');
+  banner.id = '__exporter_banner';
+  banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:999999;background:#1e1b4b;color:#e2e8f0;font:600 14px/1 system-ui,sans-serif;padding:12px 20px;text-align:center;box-shadow:0 -2px 12px rgba(0,0,0,.4);';
+  banner.textContent = 'Exporting: scanning messages...';
+  document.body.appendChild(banner);
+  function updateBanner(text) { banner.textContent = text; }
 
-  var lastTop = -1, attempts = 0;
-  while (attempts < 500) {
-    scrollBy(clientH() - 50);
-    await new Promise(function(r) { setTimeout(r, 100); });
-    if (currentTop() === lastTop) break;
-    lastTop = currentTop();
-    attempts++;
-  }
-  scrollTopTo(0);
-  await new Promise(function(r) { setTimeout(r, 500); });
-
-  // ----- Capture pass -----
+  // ----- Single scroll+capture pass (no redundant pre-scroll) -----
   var seen = new Set();
   var ordered = [];
-  lastTop = -1;
 
   function captureClaude() {
     document.querySelectorAll('[data-testid="user-message"]').forEach(function(el) {
@@ -278,22 +270,35 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
       if (txt) ordered.push({ el: el, role: role, text: txt });
     });
   }
-
-  while (true) {
+  function captureVisible() {
     if (isClaude) captureClaude();
     else if (isChatGPT) captureChatGPT();
     else captureGemini();
-
-    scrollBy(clientH() - 50);
-    await new Promise(function(r) { setTimeout(r, 200); });
-    if (currentTop() === lastTop) break;
-    lastTop = currentTop();
   }
-  if (isClaude) captureClaude();
-  else if (isChatGPT) captureChatGPT();
-  else captureGemini();
 
-  if (!ordered.length) { alert('No messages found.'); return; }
+  console.log('[Exporter] Scanning conversation...');
+  scrollTopTo(0);
+  await new Promise(function(r) { setTimeout(r, 300); });
+  captureVisible();
+
+  var lastTop = -1, scrollStep = 0;
+  var totalH = scrollEl === document.documentElement ? document.body.scrollHeight : scrollEl.scrollHeight;
+  var delay = isGemini ? 60 : isChatGPT ? 150 : 100;
+
+  while (scrollStep < 2000) {
+    scrollBy(clientH() - 50);
+    await new Promise(function(r) { setTimeout(r, delay); });
+    var nowTop = currentTop();
+    if (nowTop === lastTop) break;
+    lastTop = nowTop;
+    scrollStep++;
+    captureVisible();
+    var pct = Math.min(99, Math.round((nowTop / (totalH - clientH())) * 100));
+    updateBanner('Exporting: ' + ordered.length + ' messages captured (' + pct + '% scrolled)');
+  }
+  captureVisible();
+
+  if (!ordered.length) { banner.remove(); alert('No messages found.'); return; }
 
   ordered.sort(function(a, b) {
     if (a.el === b.el) return 0;
@@ -302,6 +307,7 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
     if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
     return 0;
   });
+  updateBanner('Exporting: ' + ordered.length + ' messages captured. Processing media...');
   console.log('[Exporter] Captured ' + ordered.length + ' messages, ' + mediaQueue.length + ' media items');
 
   // ----- Fetch media, build zip -----
@@ -309,9 +315,9 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
   var savedMedia = [];
   if (JSZip && mediaQueue.length > 0) {
     var zipPreview = new JSZip();  // probe; reassigned below
-    // Fetch sequentially to keep memory bounded and avoid CDN rate limits.
     for (var i = 0; i < mediaQueue.length; i++) {
       var item = mediaQueue[i];
+      updateBanner('Exporting: downloading media ' + (i + 1) + '/' + mediaQueue.length + '...');
       try {
         var blob = null;
 
@@ -430,4 +436,8 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
     document.body.removeChild(a);
     setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
   }
+
+  banner.textContent = 'Export complete! ' + ordered.length + ' messages saved.';
+  banner.style.background = '#065f46';
+  setTimeout(function() { banner.remove(); }, 4000);
 })();`;
