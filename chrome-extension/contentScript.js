@@ -233,10 +233,39 @@
     updateProgress("Loading full conversation history...");
 
     if (isGemini) {
-      // Gemini pre-loads conversation data; its infinite-scroller is purely a
-      // render virtualizer, not a lazy-loader. Skip the expensive scroll-UP
-      // and scroll-DOWN-to-render phases entirely. The single capture pass
-      // below will scroll and capture in one go.
+      // Gemini lazy-loads older messages on scroll-up. Scroll up to load all
+      // history, but use fast delays since we only need the DOM populated.
+      let gUpAttempts = 0;
+      let gNoProgress = 0;
+      let gLastH = getMaxScrollHeight();
+
+      while (gUpAttempts < 500) {
+        checkCancelled();
+        await ensureVisible();
+
+        scrollBy(-(clientH() - 50));
+        getScrollableElements().forEach(el => {
+          try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+        });
+        await new Promise(r => setTimeout(r, 120));
+
+        const afterTop = currentTop();
+        const afterH = getMaxScrollHeight();
+
+        if (afterTop <= 0 && afterH === gLastH) {
+          gNoProgress++;
+          if (gNoProgress > 3) break;
+        } else {
+          gNoProgress = 0;
+        }
+        gLastH = afterH;
+        gUpAttempts++;
+        if (gUpAttempts % 20 === 0) {
+          const msgCount = document.querySelectorAll('user-query').length;
+          updateProgress(`Loading history... ${msgCount} messages found (step ${gUpAttempts})`);
+        }
+      }
+
       scrollTopTo(0);
       getScrollableElements().forEach(el => {
         try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
