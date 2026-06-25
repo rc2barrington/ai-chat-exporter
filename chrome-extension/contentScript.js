@@ -2,11 +2,8 @@
 // Scrapes the chat page, scrolls to load all content, fetches media, and returns the data.
 
 (async function() {
-  if (window.hasExporterListener) {
-    // Already loaded, don't re-register listener
-    return;
-  }
-  window.hasExporterListener = true;
+  const scriptVersion = (window.__exporterScriptVersion || 0) + 1;
+  window.__exporterScriptVersion = scriptVersion;
 
   let keepAlivePort;
   let keepAliveInterval;
@@ -59,14 +56,23 @@
   let popOutRequested = false;
 
   function requestPopOut() {
-    if (popOutRequested || !document.hidden) return;
+    if (!document.hidden) return;
+    if (popOutRequested) return;
     popOutRequested = true;
     try {
-      chrome.runtime.sendMessage({ action: "popOutTab" }, () => {
+      chrome.runtime.sendMessage({
+        action: "popOutTab",
+        screen: {
+          width: window.screen.availWidth || window.screen.width || 1440,
+          height: window.screen.availHeight || window.screen.height || 900
+        }
+      }, () => {
         void chrome.runtime.lastError;
+        // Allow retry if we're still hidden after the pop-out settles
+        setTimeout(() => { popOutRequested = false; }, 5000);
       });
     } catch (e) {
-      // Ignore if context is invalidated
+      popOutRequested = false;
     }
   }
 
@@ -74,10 +80,19 @@
     if (document.hidden) requestPopOut();
   }
 
+  let exportCancelled = false;
+
   // Listen for the run message from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (window.__exporterScriptVersion !== scriptVersion) return;
     if (!request) return;
+    if (request.action === "cancelExport") {
+      exportCancelled = true;
+      sendResponse({ status: "cancelled" });
+      return;
+    }
     if (request.action === "exportChat") {
+      exportCancelled = false;
       startKeepAlive();
       runExport(request.options)
         .then(result => {
@@ -107,6 +122,10 @@
   }
 
   async function runExport(options) {
+    function checkCancelled() {
+      if (exportCancelled) throw new Error("Export cancelled.");
+    }
+
     const isChatGPT = !!document.querySelector('[data-message-author-role]');
     const isClaude = !!document.querySelector('[data-testid="user-message"]');
     const isGemini = !!document.querySelector('user-query');
@@ -146,6 +165,8 @@
       const els = new Set([document.documentElement, document.body]);
       if (scrollEl) els.add(scrollEl);
       document.querySelectorAll('.overflow-y-auto, [style*="overflow-y: auto"], [style*="overflow: auto"], main').forEach(e => els.add(e));
+      const geminiScroller = document.querySelector('infinite-scroller.chat-history');
+      if (geminiScroller) els.add(geminiScroller);
       return Array.from(els);
     }
 
@@ -173,12 +194,14 @@
       return maxTop;
     }
 
+    const initialClientH = window.innerHeight || 800;
+
     function clientH() {
       let h = window.innerHeight;
       if (scrollEl && scrollEl !== document.documentElement && scrollEl.clientHeight > 0) {
         h = scrollEl.clientHeight;
       }
-      return h;
+      return Math.max(h, initialClientH, 600);
     }
 
     function getMaxScrollHeight() {
@@ -189,108 +212,140 @@
       return maxH;
     }
 
+    let lastPopOutAttempt = 0;
+
     async function ensureVisible() {
       if (!document.hidden) return;
+      const now = Date.now();
+      if (now - lastPopOutAttempt < 30000) return;
+      lastPopOutAttempt = now;
 
-      updateProgress("Export tab backgrounded. Popping out tab to a temporary background window to keep layout and scrolling active...");
-      requestPopOut(); // no-op if the visibilitychange listener already requested it
+      updateProgress("Export tab backgrounded. Popping out tab...");
+      requestPopOut();
 
-      // Wait for Chrome to transfer the window and activate layout rendering (hidden becomes false)
       let checks = 0;
-      while (document.hidden && checks < 15) {
-        await new Promise(r => setTimeout(r, 400));
+      while (document.hidden && checks < 3) {
+        await new Promise(r => setTimeout(r, 300));
         checks++;
       }
     }
 
     updateProgress("Loading full conversation history...");
 
-    // 1. Scroll UP repeatedly to trigger all lazy-loaded history
-    let upAttempts = 0;
-    let noNewContentCount = 0;
-    let lastScrollHeight = getMaxScrollHeight();
-    let lastTopPos = currentTop();
-
-    while (upAttempts < 80) {
-      await ensureVisible();
+    if (isGemini) {
+      // Gemini pre-loads conversation data; its infinite-scroller is purely a
+      // render virtualizer, not a lazy-loader. Skip the expensive scroll-UP
+      // and scroll-DOWN-to-render phases entirely. The single capture pass
+      // below will scroll and capture in one go.
       scrollTopTo(0);
-      
-      // If the tab is hidden, Chrome throttles setTimeout, so we wait longer to match throttle rate
-      const delay = document.hidden ? 1200 : 400;
-      await new Promise(r => setTimeout(r, delay));
-      
-      const currentH = getMaxScrollHeight();
-      const currentTopPos = currentTop();
-      
-      if (currentTopPos === 0) {
-        updateProgress("Reached the top of the conversation.");
-        break;
-      }
-      
-      if (currentH === lastScrollHeight && currentTopPos === lastTopPos) {
-        noNewContentCount++;
-        const maxNoProgress = document.hidden ? 15 : 5;
-        if (noNewContentCount > maxNoProgress) {
-          updateProgress("Fully scrolled up (no new history loaded).");
-          break; 
-        }
-      } else {
-        noNewContentCount = 0;
-      }
-      
-      lastScrollHeight = currentH;
-      lastTopPos = currentTopPos;
-      upAttempts++;
-      if (upAttempts % 5 === 0) {
-        updateProgress(`Scrolling UP to load history (step ${upAttempts})...`);
-      }
-    }
+      getScrollableElements().forEach(el => {
+        try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+      });
+      await new Promise(r => setTimeout(r, 300));
+    } else {
+      // ChatGPT / Claude: scroll UP to trigger lazy-loaded history.
+      let upAttempts = 0;
+      let noNewContentCount = 0;
+      let lastScrollHeight = getMaxScrollHeight();
 
-    // 2. Scroll DOWN gradually to ensure all virtualized nodes render
-    updateProgress("Scrolling DOWN to render all messages...");
-    scrollTopTo(0);
-    await new Promise(r => setTimeout(r, document.hidden ? 1000 : 500));
+      while (upAttempts < 200) {
+        checkCancelled();
+        await ensureVisible();
 
-    let lastTop = -1;
-    let downAttempts = 0;
-    let noProgressCount = 0;
-    
-    while (downAttempts < 120) {
-      await ensureVisible();
-      const currentH = getMaxScrollHeight();
-      const currTop = currentTop();
-      const viewH = clientH();
-      
-      // If we are already at or extremely close to the bottom, we can stop scrolling
-      if (currTop + viewH >= currentH - 100) {
-        break;
-      }
-      
-      scrollBy(viewH - 50);
-      
-      const delay = document.hidden ? 1000 : 250;
-      await new Promise(r => setTimeout(r, delay));
-      
-      const top = currentTop();
-      if (top === lastTop) {
-        noProgressCount++;
-        const maxNoProgress = document.hidden ? 15 : 6;
-        if (noProgressCount > maxNoProgress) {
-          break;
+        const stepSize = clientH() - 50;
+        const before = currentTop();
+
+        if (before <= 0) {
+          scrollTopTo(0);
+          getScrollableElements().forEach(el => {
+            try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+          });
+          await new Promise(r => setTimeout(r, 400));
+
+          const afterH = getMaxScrollHeight();
+          const afterTop = currentTop();
+          if (afterTop === 0 && afterH === lastScrollHeight) {
+            noNewContentCount++;
+            if (noNewContentCount > 5) {
+              updateProgress("Reached the top of the conversation.");
+              break;
+            }
+          } else {
+            noNewContentCount = 0;
+          }
+          lastScrollHeight = afterH;
+        } else {
+          scrollBy(-stepSize);
+          getScrollableElements().forEach(el => {
+            try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+          });
+          await new Promise(r => setTimeout(r, 250));
+          const afterTop = currentTop();
+          const afterH = getMaxScrollHeight();
+          if (afterTop === before && afterH === lastScrollHeight) {
+            noNewContentCount++;
+            if (noNewContentCount > 3) {
+              scrollTopTo(0);
+              await new Promise(r => setTimeout(r, 250));
+            }
+          } else {
+            noNewContentCount = 0;
+          }
+          lastScrollHeight = afterH;
         }
-      } else {
-        noProgressCount = 0;
+
+        upAttempts++;
+        if (upAttempts % 10 === 0) {
+          updateProgress(`Scrolling UP to load history (step ${upAttempts})...`);
+        }
       }
-      
-      lastTop = top;
-      downAttempts++;
-      if (downAttempts % 5 === 0) {
-        updateProgress(`Scrolling DOWN to render messages (step ${downAttempts})...`);
+
+      // Scroll DOWN to ensure all virtualized nodes render
+      updateProgress("Scrolling DOWN to render all messages...");
+      scrollTopTo(0);
+      await new Promise(r => setTimeout(r, 500));
+
+      let lastTop = -1;
+      let downAttempts = 0;
+      let noProgressCount = 0;
+
+      while (downAttempts < 120) {
+        checkCancelled();
+        await ensureVisible();
+        const currentH = getMaxScrollHeight();
+        const currTop = currentTop();
+        const viewH = clientH();
+
+        if (currTop + viewH >= currentH - 100) break;
+
+        scrollBy(viewH - 50);
+        getScrollableElements().forEach(el => {
+          try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+        });
+
+        await new Promise(r => setTimeout(r, 250));
+
+        const top = currentTop();
+        if (top === lastTop) {
+          noProgressCount++;
+          if (noProgressCount > 6) break;
+        } else {
+          noProgressCount = 0;
+        }
+
+        lastTop = top;
+        downAttempts++;
+        if (downAttempts % 5 === 0) {
+          updateProgress(`Scrolling DOWN to render messages (step ${downAttempts})...`);
+        }
       }
+
+      scrollTopTo(0);
+      getScrollableElements().forEach(el => {
+        try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+      });
+      await new Promise(r => setTimeout(r, 500));
     }
-    
-    scrollTopTo(0);
-    await new Promise(r => setTimeout(r, document.hidden ? 1000 : 500));
 
     // ----- Media Bookkeeping -----
     const mediaQueue = [];  // [{ url, filename, kind, alt }]
@@ -348,6 +403,12 @@
       return map[mime.split(';')[0].trim()] || null;
     }
 
+    const GEMINI_SKIP_TAGS = new Set([
+      'sources-list', 'message-actions', 'thumb-up-button', 'thumb-down-button',
+      'copy-button', 'freemium-rag-disclaimer', 'sensitive-memories-banner',
+      'election-info-disclaimer', 'fact-check-button'
+    ]);
+
     // ----- Walk DOM to generate Markdown -----
     function nodeToMarkdown(node) {
       if (!node) return "";
@@ -355,12 +416,24 @@
       node.childNodes.forEach(child => {
         if (child.nodeType === 3) { out += child.nodeValue; return; }
         if (child.nodeType !== 1) return;
+        if (child.classList && (
+          child.classList.contains('cdk-visually-hidden') ||
+          child.classList.contains('sr-only') ||
+          child.classList.contains('visually-hidden')
+        )) return;
         const tag = child.tagName.toLowerCase();
+
+        if (GEMINI_SKIP_TAGS.has(tag)) return;
 
         // ----- Media capture -----
         if (tag === 'img') {
           const src = child.currentSrc || child.src || child.getAttribute('src');
           const alt = (child.getAttribute('alt') || '').trim();
+
+          if (src && src.includes('drive-thirdparty.googleusercontent.com')) {
+            return;
+          }
+
           const fname = enqueueMedia(src, 'image', alt);
           const altText = alt ? ` - "${alt}"` : '';
           if (fname) {
@@ -448,19 +521,26 @@
 
     function cleanText(s) { return s.replace(/\n{3,}/g, '\n\n').trim(); }
 
+    function cleanGeminiText(s) {
+      return s.replace(/\s{2,}[A-Z]{2,5}(?:\+\s*\d+)?\s*$/gm, '');
+    }
+
     // ----- Capture Pass -----
     const seen = new Set();
     const ordered = [];
-    lastTop = -1;
+    let captureOrder = 0;
+
+    // Gemini's virtualizer recycles DOM nodes, so element-reference dedup
+    // doesn't work. Use a text fingerprint (first 200 chars of role+text)
+    // to avoid duplicates from recycled elements.
+    const seenTexts = new Set();
 
     function captureClaude() {
-      // User turns
       document.querySelectorAll('[data-testid="user-message"]').forEach(el => {
         if (seen.has(el)) return;
         seen.add(el);
-        ordered.push({ el: el, role: '## You', text: cleanText(nodeToMarkdown(el)) });
+        ordered.push({ el: el, role: '## You', text: cleanText(nodeToMarkdown(el)), ord: captureOrder++ });
       });
-      // Assistant turns (filtering out tool call internals if not desired)
       const main = document.querySelector('main') || document.body;
       const blocks = main.querySelectorAll('[data-test-render-count], .font-claude-message, [class*="claude-message"]');
       blocks.forEach(el => {
@@ -468,7 +548,7 @@
         if (el.closest('[data-testid="user-message"]')) return;
         seen.add(el);
         const txt = cleanText(nodeToMarkdown(el));
-        if (txt) ordered.push({ el: el, role: '## Claude', text: txt });
+        if (txt) ordered.push({ el: el, role: '## Claude', text: txt, ord: captureOrder++ });
       });
     }
 
@@ -479,76 +559,83 @@
         const roleAttr = el.getAttribute('data-message-author-role');
         const role = roleAttr === 'user' ? '## You' : '## ChatGPT';
         const txt = cleanText(nodeToMarkdown(el));
-        if (txt) ordered.push({ el: el, role: role, text: txt });
+        if (txt) ordered.push({ el: el, role: role, text: txt, ord: captureOrder++ });
       });
     }
 
     function captureGemini() {
       document.querySelectorAll('user-query, model-response').forEach(el => {
-        if (seen.has(el)) return;
-        seen.add(el);
         const role = el.tagName.toLowerCase() === 'user-query' ? '## You' : '## Gemini';
-        const txt = cleanText(nodeToMarkdown(el));
-        if (txt) ordered.push({ el: el, role: role, text: txt });
+        let txt = cleanText(nodeToMarkdown(el));
+        if (role === '## Gemini') txt = cleanGeminiText(txt);
+        if (!txt) return;
+        const fingerprint = role + '|' + txt.slice(0, 200);
+        if (seenTexts.has(fingerprint)) return;
+        seenTexts.add(fingerprint);
+        ordered.push({ el: el, role: role, text: txt, ord: captureOrder++ });
       });
     }
 
-    updateProgress("Scraping conversation structure...");
-    let scrapeNoProgressCount = 0;
-    lastTop = -1;
-    
-    while (true) {
-      await ensureVisible();
+    function captureVisible() {
       if (isClaude) captureClaude();
       else if (isChatGPT) captureChatGPT();
       else captureGemini();
+    }
+
+    updateProgress("Scraping conversation structure...");
+    scrollTopTo(0);
+    getScrollableElements().forEach(el => {
+      try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+    });
+    await new Promise(r => setTimeout(r, 300));
+    captureVisible();
+
+    let scrapeNoProgressCount = 0;
+    let lastTop = -1;
+    const captureDelay = isGemini ? 80 : 250;
+    const captureStep = isGemini ? Math.floor(clientH() / 2) : clientH() - 50;
+
+    while (true) {
+      checkCancelled();
+      await ensureVisible();
 
       const currentH = getMaxScrollHeight();
       const currTop = currentTop();
       const viewH = clientH();
-      
-      // If we are at the bottom, run one final capture and exit
+
       if (currTop + viewH >= currentH - 100) {
-        if (isClaude) captureClaude();
-        else if (isChatGPT) captureChatGPT();
-        else captureGemini();
+        captureVisible();
         break;
       }
 
-      scrollBy(viewH - 50);
-      
-      const delay = document.hidden ? 1000 : 250;
-      await new Promise(r => setTimeout(r, delay));
-      
+      scrollBy(captureStep);
+      getScrollableElements().forEach(el => {
+        try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+      });
+
+      await new Promise(r => setTimeout(r, captureDelay));
+      captureVisible();
+
+      if (ordered.length % 10 === 0) {
+        updateProgress(`Captured ${ordered.length} messages...`);
+      }
+
       const top = currentTop();
       if (top === lastTop) {
         scrapeNoProgressCount++;
-        const maxNoProgress = document.hidden ? 15 : 6;
-        if (scrapeNoProgressCount > maxNoProgress) {
-          break;
-        }
+        if (scrapeNoProgressCount > 8) break;
       } else {
         scrapeNoProgressCount = 0;
       }
       lastTop = top;
     }
-    // Final check
-    if (isClaude) captureClaude();
-    else if (isChatGPT) captureChatGPT();
-    else captureGemini();
+    captureVisible();
 
     if (!ordered.length) {
       throw new Error('No messages could be parsed in the DOM.');
     }
 
-    // Sort chronologically based on layout position
-    ordered.sort((a, b) => {
-      if (a.el === b.el) return 0;
-      const pos = a.el.compareDocumentPosition(b.el);
-      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
-      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
-      return 0;
-    });
+    ordered.sort((a, b) => a.ord - b.ord);
 
     updateProgress(`Parsed ${ordered.length} messages. Found ${mediaQueue.length} media attachments.`);
 
@@ -561,6 +648,7 @@
 
     if (localQueue.length > 0) {
       for (let i = 0; i < localQueue.length; i++) {
+        checkCancelled();
         const item = localQueue[i];
         updateProgress(`Fetching local attachment ${i+1}/${localQueue.length}: ${item.filename}...`);
         try {
