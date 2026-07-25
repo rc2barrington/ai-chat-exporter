@@ -42,45 +42,47 @@
     }
   }
 
-  // ----- Pop-out-on-hide -----
-  // When the export tab is backgrounded, browsers throttle timers and pause
-  // virtualization/IntersectionObserver, which stalls scrolling. We move the tab to
-  // its own (unfocused) window so document.hidden becomes false and layout stays live.
-  //
-  // Previously this only fired from inside the scroll loops (via ensureVisible), so it
-  // depended on the tab being hidden at the exact moment one of those awaits ran. Sites
-  // with short/fast scroll phases (e.g. Gemini) could get backgrounded between phases —
-  // or during the media-fetch loop, which never calls ensureVisible — and never pop out.
-  // Listening on visibilitychange makes the pop-out fire the instant the user clicks away,
-  // regardless of which phase the export is in.
-  let popOutRequested = false;
-
-  function requestPopOut() {
-    if (!document.hidden) return;
-    if (popOutRequested) return;
-    popOutRequested = true;
-    try {
-      chrome.runtime.sendMessage({
-        action: "popOutTab",
-        screen: {
-          width: window.screen.availWidth || window.screen.width || 1440,
-          height: window.screen.availHeight || window.screen.height || 900
-        }
-      }, () => {
-        void chrome.runtime.lastError;
-        // Allow retry if we're still hidden after the pop-out settles
-        setTimeout(() => { popOutRequested = false; }, 5000);
-      });
-    } catch (e) {
-      popOutRequested = false;
-    }
-  }
-
-  function onVisibilityChange() {
-    if (document.hidden) requestPopOut();
-  }
-
   let exportCancelled = false;
+
+  // Chrome throttles setTimeout to ~1/second (or worse) in hidden tabs.
+  // The background worker dispatches an __exportWake event every 500ms via
+  // chrome.scripting.executeScript, which is NOT throttled. sleep() listens
+  // for that event so the export keeps running at near-normal speed even
+  // when the user switches to another tab.
+  //
+  // sleep() is also the cancellation point: if the export is cancelled while
+  // it's waiting, it aborts the sleep and throws immediately instead of
+  // running out the full delay. Since nearly every step awaits a sleep, this
+  // makes Cancel take effect almost instantly no matter what phase we're in.
+  function sleep(ms) {
+    return new Promise((resolve, reject) => {
+      if (exportCancelled) { reject(new Error("Export cancelled.")); return; }
+      const deadline = Date.now() + ms;
+      let settled = false;
+      const cleanup = () => {
+        document.removeEventListener('__exportWake', onWake);
+        document.removeEventListener('__exportCancel', onCancel);
+      };
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve();
+      };
+      const onCancel = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("Export cancelled."));
+      };
+      const onWake = () => {
+        if (Date.now() >= deadline) done();
+      };
+      document.addEventListener('__exportWake', onWake);
+      document.addEventListener('__exportCancel', onCancel);
+      setTimeout(done, ms);
+    });
+  }
 
   // Listen for the run message from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -88,6 +90,9 @@
     if (!request) return;
     if (request.action === "cancelExport") {
       exportCancelled = true;
+      // Wake any in-flight sleep() so it aborts right now instead of
+      // waiting out its timer.
+      try { document.dispatchEvent(new Event('__exportCancel')); } catch (e) {}
       sendResponse({ status: "cancelled" });
       return;
     }
@@ -97,12 +102,10 @@
       runExport(request.options)
         .then(result => {
           stopKeepAlive();
-          document.removeEventListener('visibilitychange', onVisibilityChange);
           sendResponse({ status: "success", data: result });
         })
         .catch(err => {
           stopKeepAlive();
-          document.removeEventListener('visibilitychange', onVisibilityChange);
           sendResponse({ status: "error", error: err.message || String(err) });
         });
       return true; // Keep message channel open for async response
@@ -126,27 +129,78 @@
       if (exportCancelled) throw new Error("Export cancelled.");
     }
 
-    const isChatGPT = !!document.querySelector('[data-message-author-role]');
-    const isClaude = !!document.querySelector('[data-testid="user-message"]');
-    const isGemini = !!document.querySelector('user-query');
+    // Aborts in-flight network requests the moment Cancel is hit, so a slow
+    // media download or the initial API fetch doesn't hold up cancellation.
+    const abortController = new AbortController();
+    const onExportCancel = () => {
+      document.removeEventListener('__exportCancel', onExportCancel);
+      try { abortController.abort(); } catch (e) {}
+    };
+    document.addEventListener('__exportCancel', onExportCancel);
+    if (exportCancelled) abortController.abort();
 
-    if (!isChatGPT && !isClaude && !isGemini) {
-      throw new Error("No messages found. Open this on a Claude.ai, ChatGPT, or Gemini conversation.");
+    // Grok is tested FIRST: it marks messages with [data-testid="user-message"]
+    // too, which is also Claude's selector, so a hostname check has to break
+    // the tie before the Claude branch can claim the page.
+    const isGrok = /(^|\.)grok\.com$/.test(location.hostname) &&
+                   !!document.querySelector('[data-testid="user-message"],[data-testid="assistant-message"]');
+    const isChatGPT = !isGrok && !!document.querySelector('[data-message-author-role]');
+    const isClaude = !isGrok && !!document.querySelector('[data-testid="user-message"]');
+    const isGemini = !isGrok && !!document.querySelector('user-query');
+
+    if (!isChatGPT && !isClaude && !isGemini && !isGrok) {
+      throw new Error("No messages found. Open this on a Claude.ai, ChatGPT, Gemini, or Grok conversation.");
     }
 
-    const siteName = isChatGPT ? "ChatGPT" : (isClaude ? "Claude" : "Gemini");
+    const siteName = isGrok ? "Grok" : (isChatGPT ? "ChatGPT" : (isClaude ? "Claude" : "Gemini"));
     updateProgress(`Detected ${siteName} tab. Scanning scroll container...`);
 
-    // Pop out the moment the tab is backgrounded, for the whole export — not just while
-    // a scroll loop happens to be awaiting. Covers gaps between phases and the media-fetch
-    // loop, where Gemini exports were previously getting stuck without popping out.
-    popOutRequested = false;
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    requestPopOut(); // in case the tab is already hidden when the export starts
+    // claude.ai virtualizes long chats so aggressively that a DOM sweep is
+    // both slow (React mounts each window synchronously; ~20 min on a long
+    // chat) and lossy (the DOM never mounts every message). The SPA's own
+    // JSON API returns the entire conversation in one request — use it,
+    // and keep the DOM sweep only as a fallback. Runs in the page context,
+    // so the user's session cookies apply; nothing leaves claude.ai.
+    let claudeApiData = null;
+    if (isClaude) {
+      try {
+        updateProgress("Fetching conversation via claude.ai API (no scrolling needed)...");
+        const convoId = (location.pathname.match(/\/chat\/([^/?#]+)/) || [])[1];
+        if (!convoId) throw new Error("no conversation id in URL");
+        const orgsRes = await fetch("/api/organizations", { credentials: "same-origin", signal: abortController.signal });
+        if (!orgsRes.ok) throw new Error("organizations HTTP " + orgsRes.status);
+        const orgs = await orgsRes.json();
+        // The account may belong to several organizations; the conversation
+        // lives in exactly one. Try chat-capable orgs first.
+        const candidates = [
+          ...orgs.filter(o => (o.capabilities || []).includes("chat")),
+          ...orgs.filter(o => !(o.capabilities || []).includes("chat"))
+        ];
+        for (const org of candidates) {
+          const res = await fetch(
+            "/api/organizations/" + org.uuid + "/chat_conversations/" + convoId +
+            "?tree=True&rendering_mode=messages&render_all_tools=true",
+            { credentials: "same-origin", signal: abortController.signal }
+          );
+          if (res.ok) { claudeApiData = await res.json(); break; }
+        }
+        if (!claudeApiData || !Array.isArray(claudeApiData.chat_messages) || !claudeApiData.chat_messages.length) {
+          claudeApiData = null;
+          throw new Error("conversation not found via API");
+        }
+        updateProgress(`Fetched ${claudeApiData.chat_messages.length} messages via API.`);
+      } catch (e) {
+        claudeApiData = null;
+        updateProgress(`claude.ai API path failed (${e.message || e}); falling back to page scrape.`);
+      }
+    }
 
     // ----- Find scroll container, force-load all turns -----
+    const GROK_MSG_SELECTOR = '[data-testid="user-message"],[data-testid="assistant-message"]';
+
     let firstMsg;
-    if (isChatGPT) firstMsg = document.querySelector('[data-message-author-role]');
+    if (isGrok) firstMsg = document.querySelector(GROK_MSG_SELECTOR);
+    else if (isChatGPT) firstMsg = document.querySelector('[data-message-author-role]');
     else if (isClaude) firstMsg = document.querySelector('[data-testid="user-message"]');
     else firstMsg = document.querySelector('user-query');
 
@@ -212,67 +266,113 @@
       return maxH;
     }
 
-    let lastPopOutAttempt = 0;
-
-    async function ensureVisible() {
-      if (!document.hidden) return;
-      const now = Date.now();
-      if (now - lastPopOutAttempt < 30000) return;
-      lastPopOutAttempt = now;
-
-      updateProgress("Export tab backgrounded. Popping out tab...");
-      requestPopOut();
-
-      let checks = 0;
-      while (document.hidden && checks < 3) {
-        await new Promise(r => setTimeout(r, 300));
-        checks++;
-      }
-    }
+    // Kept as a hook point for the scroll loops. The background worker's
+    // visibility patch + wake pulses keep a hidden tab progressing, so
+    // there is nothing to do here anymore.
+    async function ensureVisible() {}
 
     updateProgress("Loading full conversation history...");
 
-    if (isGemini) {
-      // Gemini lazy-loads older messages on scroll-up. Scroll up to load all
-      // history, but use fast delays since we only need the DOM populated.
-      let gUpAttempts = 0;
-      let gNoProgress = 0;
-      let gLastH = getMaxScrollHeight();
-
-      while (gUpAttempts < 500) {
+    if (isClaude && claudeApiData) {
+      // Full conversation already fetched via the API — no DOM prep needed.
+    } else if (isClaude) {
+      // Fallback DOM path: jump to the top, confirm the height is stable,
+      // and let the capture sweep below visit every virtualized window.
+      scrollTopTo(0);
+      await sleep(600);
+      let cLastH = getMaxScrollHeight();
+      for (let cStep = 0; cStep < 10; cStep++) {
         checkCancelled();
-        await ensureVisible();
+        await sleep(300);
+        const h = getMaxScrollHeight();
+        if (h === cLastH) break;
+        cLastH = h;
+        scrollTopTo(0);
+      }
+    } else if (isGrok) {
+      // Grok keeps every message mounted (verified live, 2026-07: a
+      // 53-message chat had all 53 in the DOM with stable element
+      // identity, and scrolling to the top loaded nothing new). Longer
+      // chats may still paginate, so scroll up until the count stops
+      // growing, then stop — on an already-complete chat this costs one
+      // round and exits.
+      const grokCount = () => document.querySelectorAll(GROK_MSG_SELECTOR).length;
+      let gPrev = grokCount();
+      let gEmpty = 0;
 
-        scrollBy(-(clientH() - 50));
+      for (let step = 0; step < 300 && gEmpty < 3; step++) {
+        checkCancelled();
+        scrollTopTo(0);
         getScrollableElements().forEach(el => {
-          try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+          try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (e) {}
         });
-        await new Promise(r => setTimeout(r, 120));
-
-        const afterTop = currentTop();
-        const afterH = getMaxScrollHeight();
-
-        if (afterTop <= 0 && afterH === gLastH) {
-          gNoProgress++;
-          if (gNoProgress > 3) break;
+        await sleep(700);
+        const c = grokCount();
+        if (c > gPrev) {
+          gPrev = c;
+          gEmpty = 0;
+          updateProgress(`Loading history... ${c} messages`);
         } else {
-          gNoProgress = 0;
+          gEmpty++;
         }
-        gLastH = afterH;
-        gUpAttempts++;
-        if (gUpAttempts % 20 === 0) {
-          const msgCount = document.querySelectorAll('user-query').length;
-          updateProgress(`Loading history... ${msgCount} messages found (step ${gUpAttempts})`);
+      }
+      updateProgress(`All history loaded: ${gPrev} messages.`);
+    } else if (isGemini) {
+      // The background worker moves this tab to its own window so Chrome
+      // never throttles it. With the tab visible, Gemini's lazy-loader
+      // works normally: scroll the infinite-scroller to 0, dispatch a
+      // 'scroll' event, wait for the batch to render.
+      //
+      // Verified live (2026-07, 340-message chat):
+      //   - scrollTop=0 alone does NOT trigger the loader; the scroll
+      //     event dispatch is required.
+      //   - After each ~20-message batch, Gemini restores scrollTop back
+      //     down, so every round must re-scroll to 0.
+      //   - Batches can stall for 1-2 rounds then resume, so "done"
+      //     requires several consecutive rounds with zero growth.
+      const gScroller = () =>
+        document.querySelector('infinite-scroller.chat-history') ||
+        scrollEl || document.scrollingElement || document.documentElement;
+      const msgCount = () => document.querySelectorAll('user-query, model-response').length;
+
+      let prevCount = msgCount();
+      let emptyRounds = 0;
+
+      for (let gStep = 0; gStep < 2000; gStep++) {
+        checkCancelled();
+
+        const sc = gScroller();
+        sc.scrollTop = 0;
+        sc.dispatchEvent(new Event('scroll', { bubbles: true }));
+
+        // Wait for the count to grow. Batch render time scales with DOM
+        // size, so be patient.
+        const waitStart = Date.now();
+        let grew = false;
+        while (Date.now() - waitStart < 15000) {
+          await sleep(500);
+          checkCancelled();
+          if (msgCount() > prevCount) { grew = true; break; }
+        }
+
+        const now = msgCount();
+        if (grew) {
+          emptyRounds = 0;
+          prevCount = now;
+          updateProgress(`Loading history... ${now} messages`);
+        } else {
+          emptyRounds++;
+          if (emptyRounds >= 4) {
+            updateProgress(`All history loaded: ${now} messages.`);
+            break;
+          }
         }
       }
 
-      scrollTopTo(0);
-      getScrollableElements().forEach(el => {
-        try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
-      });
-      await new Promise(r => setTimeout(r, 300));
+      gScroller().scrollTop = 0;
+      await sleep(500);
     } else {
-      // ChatGPT / Claude: scroll UP to trigger lazy-loaded history.
+      // ChatGPT: scroll UP to trigger lazy-loaded history.
       let upAttempts = 0;
       let noNewContentCount = 0;
       let lastScrollHeight = getMaxScrollHeight();
@@ -289,7 +389,7 @@
           getScrollableElements().forEach(el => {
             try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
           });
-          await new Promise(r => setTimeout(r, 400));
+          await sleep(400);
 
           const afterH = getMaxScrollHeight();
           const afterTop = currentTop();
@@ -308,14 +408,14 @@
           getScrollableElements().forEach(el => {
             try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
           });
-          await new Promise(r => setTimeout(r, 250));
+          await sleep(250);
           const afterTop = currentTop();
           const afterH = getMaxScrollHeight();
           if (afterTop === before && afterH === lastScrollHeight) {
             noNewContentCount++;
             if (noNewContentCount > 3) {
               scrollTopTo(0);
-              await new Promise(r => setTimeout(r, 250));
+              await sleep(250);
             }
           } else {
             noNewContentCount = 0;
@@ -332,7 +432,7 @@
       // Scroll DOWN to ensure all virtualized nodes render
       updateProgress("Scrolling DOWN to render all messages...");
       scrollTopTo(0);
-      await new Promise(r => setTimeout(r, 500));
+      await sleep(500);
 
       let lastTop = -1;
       let downAttempts = 0;
@@ -352,7 +452,7 @@
           try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
         });
 
-        await new Promise(r => setTimeout(r, 250));
+        await sleep(250);
 
         const top = currentTop();
         if (top === lastTop) {
@@ -373,7 +473,7 @@
       getScrollableElements().forEach(el => {
         try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
       });
-      await new Promise(r => setTimeout(r, 500));
+      await sleep(500);
     }
 
     // ----- Media Bookkeeping -----
@@ -453,6 +553,15 @@
         const tag = child.tagName.toLowerCase();
 
         if (GEMINI_SKIP_TAGS.has(tag)) return;
+
+        // Grok wraps its reasoning trace in .thinking-container; honour the
+        // "Include Thinking" toggle rather than always inlining it.
+        if (child.classList && child.classList.contains('thinking-container')) {
+          if (!options.includeThinking) return;
+          const think = cleanText(nodeToMarkdown(child));
+          if (think) out += '\n\n*Thinking:*\n\n> ' + think.replace(/\n/g, '\n> ') + '\n\n';
+          return;
+        }
 
         // ----- Media capture -----
         if (tag === 'img') {
@@ -564,65 +673,221 @@
     // to avoid duplicates from recycled elements.
     const seenTexts = new Set();
 
+    // claude.ai virtualizes long chats: only ~10 message wrappers are
+    // mounted at a time (notably BOTH the first and last turns while you're
+    // at the top), and wrappers unmount/remount as you scroll. Two
+    // consequences for capture:
+    //   - element-identity dedup fails (a remounted message is a new node),
+    //     so dedup by text fingerprint;
+    //   - capture sequence is NOT document order (the tail is mounted at
+    //     the top of the sweep), so order by absolute pixel position in
+    //     the scroll space instead.
+    let claudeScrollerCache = null;
+    function claudeScroller() {
+      if (claudeScrollerCache && claudeScrollerCache.isConnected) return claudeScrollerCache;
+      claudeScrollerCache = Array.from(document.querySelectorAll('.overflow-y-auto'))
+        .filter(el => el.scrollHeight > el.clientHeight + 200)
+        .sort((a, b) => b.scrollHeight - a.scrollHeight)[0] || null;
+      return claudeScrollerCache;
+    }
+
     function captureClaude() {
+      const sc = claudeScroller();
+      const base = sc ? sc.scrollTop : 0;
+      const absTop = (el) => Math.round(el.getBoundingClientRect().top + base);
+
       document.querySelectorAll('[data-testid="user-message"]').forEach(el => {
-        if (seen.has(el)) return;
-        seen.add(el);
-        ordered.push({ el: el, role: '## You', text: cleanText(nodeToMarkdown(el)), ord: captureOrder++ });
-      });
-      const main = document.querySelector('main') || document.body;
-      const blocks = main.querySelectorAll('[data-test-render-count], .font-claude-message, [class*="claude-message"]');
-      blocks.forEach(el => {
-        if (seen.has(el)) return;
-        if (el.closest('[data-testid="user-message"]')) return;
-        seen.add(el);
+        const fp = 'Y|' + (el.textContent || '').trim().slice(0, 200);
+        if (seenTexts.has(fp)) return;
         const txt = cleanText(nodeToMarkdown(el));
-        if (txt) ordered.push({ el: el, role: '## Claude', text: txt, ord: captureOrder++ });
+        if (!txt) return;
+        seenTexts.add(fp);
+        ordered.push({ el: el, role: '## You', text: txt, ord: absTop(el) });
+      });
+      // claude.ai renamed .font-claude-message to .font-claude-response
+      // (mid-2026). Query both so the extension works on either build. The
+      // [data-test-render-count] wrappers now wrap USER messages too, so
+      // they can't be used as a response selector anymore — a wrapper that
+      // contains a user message is not a Claude turn.
+      const main = document.querySelector('main') || document.body;
+      let blocks = main.querySelectorAll('.font-claude-response, .font-claude-message');
+      if (!blocks.length) {
+        blocks = Array.from(main.querySelectorAll('[data-test-render-count]'))
+          .filter(el => !el.querySelector('[data-testid="user-message"]'));
+      }
+      blocks.forEach(el => {
+        if (el.closest('[data-testid="user-message"]')) return;
+        const fp = 'C|' + (el.textContent || '').trim().slice(0, 200);
+        if (seenTexts.has(fp)) return;
+        const txt = cleanText(nodeToMarkdown(el));
+        if (!txt) return;
+        seenTexts.add(fp);
+        ordered.push({ el: el, role: '## Claude', text: txt, ord: absTop(el) });
       });
     }
 
     function captureChatGPT() {
+      // ChatGPT's virtualizer (verified live on temporary chats, 2026-07)
+      // unmounts messages and remounts them later as brand-new element
+      // objects. Two consequences:
+      //   1. Dedup must key on data-message-id, not element identity,
+      //      or a remounted message is captured twice.
+      //   2. Capture-time ordering is unreliable: a message that remounts
+      //      mid-scroll gets captured late and would sort to the end.
+      //      Each message sits inside <section data-testid=
+      //      "conversation-turn-N">; that N is its absolute position, so
+      //      use it as the sort key. Multiple messages within one turn
+      //      share an ord and keep their DOM order via the stable sort.
       document.querySelectorAll('[data-message-author-role]').forEach(el => {
-        if (seen.has(el)) return;
-        seen.add(el);
+        const key = el.getAttribute('data-message-id') || el;
+        if (seen.has(key)) return;
         const roleAttr = el.getAttribute('data-message-author-role');
         const role = roleAttr === 'user' ? '## You' : '## ChatGPT';
         const txt = cleanText(nodeToMarkdown(el));
-        if (txt) ordered.push({ el: el, role: role, text: txt, ord: captureOrder++ });
+        // Only mark seen once we actually captured text, so a message
+        // walked mid-remount (momentarily empty) can be retried on a
+        // later pass instead of being lost.
+        if (!txt) return;
+        seen.add(key);
+        let ord = null;
+        const turnEl = el.closest('[data-testid^="conversation-turn-"]');
+        if (turnEl) {
+          const n = parseInt(turnEl.getAttribute('data-testid').slice('conversation-turn-'.length), 10);
+          if (!isNaN(n)) ord = n;
+        }
+        ordered.push({ el: el, role: role, text: txt, ord: ord !== null ? ord : captureOrder++ });
       });
     }
 
     function captureGemini() {
+      // Runs exactly ONCE, after the background worker has loaded the full
+      // history (Gemini keeps every loaded message mounted, in document
+      // order). No dedup: in a single pass every element is distinct, and
+      // fingerprint dedup would wrongly drop legitimately repeated messages
+      // (e.g. the user answering "yes" twice).
       document.querySelectorAll('user-query, model-response').forEach(el => {
         const role = el.tagName.toLowerCase() === 'user-query' ? '## You' : '## Gemini';
         let txt = cleanText(nodeToMarkdown(el));
         if (role === '## Gemini') txt = cleanGeminiText(txt);
+        if (!txt) return; // e.g. image-only message with media export off
+        ordered.push({ el: el, role: role, text: txt, ord: captureOrder++ });
+      });
+    }
+
+    function captureGrok() {
+      // Runs once, after the history pass. Grok renders every message in
+      // document order with no virtualization, so a single sweep in DOM
+      // order is both complete and correctly ordered (verified live:
+      // DOM order matched visual order exactly). No dedup, for the same
+      // reason as Gemini: repeated messages are legitimate.
+      document.querySelectorAll(GROK_MSG_SELECTOR).forEach(el => {
+        const role = el.getAttribute('data-testid') === 'user-message' ? '## You' : '## Grok';
+        const txt = cleanText(nodeToMarkdown(el));
         if (!txt) return;
-        const fingerprint = role + '|' + txt.slice(0, 200);
-        if (seenTexts.has(fingerprint)) return;
-        seenTexts.add(fingerprint);
         ordered.push({ el: el, role: role, text: txt, ord: captureOrder++ });
       });
     }
 
     function captureVisible() {
-      if (isClaude) captureClaude();
+      if (isGrok) captureGrok();
+      else if (isClaude) captureClaude();
       else if (isChatGPT) captureChatGPT();
       else captureGemini();
     }
 
+    // Build `ordered` straight from the claude.ai API payload: every
+    // message, in order, no scrolling. Media files are pushed onto the
+    // local queue (fetched below in page context, where cookies apply).
+    function buildOrderedFromClaudeApi() {
+      const msgs = claudeApiData.chat_messages || [];
+      msgs.forEach((m, i) => {
+        const role = m.sender === "human" ? "## You" : "## Claude";
+        const parts = [];
+
+        (m.attachments || []).forEach(a => {
+          if (a && a.file_name) parts.push("*Attached: " + a.file_name + "*");
+        });
+
+        (m.files_v2 || m.files || []).forEach(f => {
+          if (!f) return;
+          const kind = f.file_kind === "image" ? "image" : "file";
+          const rawUrl = f.preview_url || f.thumbnail_url || (f.document_asset && f.document_asset.url) || "";
+          if (rawUrl && options.includeMedia) {
+            let abs;
+            try { abs = new URL(rawUrl, location.href).href; } catch (e) { return; }
+            if (!urlToFilename.has(abs)) {
+              const filename = generateMediaFilename(abs, kind, mediaCounter++);
+              urlToFilename.set(abs, filename);
+              // isLocal so the in-page fetch loop (with session cookies)
+              // downloads it; the background worker has no claude.ai auth.
+              mediaQueue.push({ url: abs, filename: filename, kind: kind, alt: f.file_name || "", isLocal: true });
+            }
+            const fn = urlToFilename.get(abs);
+            parts.push(kind === "image" ? "![" + (f.file_name || "image") + "](" + fn + ")" : "[" + (f.file_name || "file") + "](" + fn + ")");
+          } else if (f.file_name) {
+            parts.push("*File: " + f.file_name + "*");
+          }
+        });
+
+        (m.content || []).forEach(b => {
+          if (!b) return;
+          if (b.type === "text" && b.text && b.text.trim()) {
+            parts.push(b.text.trim());
+          } else if (b.type === "thinking" && options.includeThinking && (b.thinking || "").trim()) {
+            parts.push("*Thinking:*\n\n> " + b.thinking.trim().replace(/\n/g, "\n> "));
+          } else if (b.type === "tool_use" && options.includeTools) {
+            parts.push("**Tool use: " + (b.name || "tool") + "**\n\n```json\n" + JSON.stringify(b.input || {}, null, 2) + "\n```");
+          } else if (b.type === "tool_result" && options.includeTools) {
+            let c = b.content;
+            if (Array.isArray(c)) c = c.map(x => (x && x.text) || "").join("\n");
+            if (typeof c !== "string") c = JSON.stringify(c ?? "", null, 2);
+            if (c && c.trim()) parts.push("**Tool result:**\n\n```\n" + c.trim() + "\n```");
+          }
+        });
+
+        const text = cleanText(parts.join("\n\n"));
+        if (text) ordered.push({ el: null, role: role, text: text, ord: i });
+      });
+    }
+
+    if (isClaude && claudeApiData) {
+      updateProgress("Building export from API data...");
+      buildOrderedFromClaudeApi();
+    } else if (isGrok) {
+      // Like Gemini: nothing is virtualized, so one sweep in DOM order
+      // captures the whole conversation with no scroll-down pass.
+      updateProgress("Scraping conversation structure...");
+      captureGrok();
+      updateProgress(`Captured ${ordered.length} messages.`);
+    } else if (isGemini) {
+      // Gemini keeps every loaded message mounted in the DOM (no
+      // virtualization / recycling). After the scroll-up phase loaded
+      // all history, every message is already rendered. One querySelectorAll
+      // captures the entire conversation -- no scroll-down pass needed,
+      // and critically no scrollBy()/scrollTopTo() calls that force
+      // synchronous layout on the 6+ scrollable elements Angular creates
+      // (which is what was stalling exports on long chats).
+      updateProgress("Scraping conversation structure...");
+      captureGemini();
+      updateProgress(`Captured ${ordered.length} messages.`);
+    } else {
+
+    // ChatGPT or Claude DOM fallback: scroll down through the page,
+    // capturing messages as the virtualizer renders each window.
     updateProgress("Scraping conversation structure...");
     scrollTopTo(0);
     getScrollableElements().forEach(el => {
       try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
     });
-    await new Promise(r => setTimeout(r, 300));
+    await sleep(300);
     captureVisible();
 
     let scrapeNoProgressCount = 0;
     let lastTop = -1;
-    const captureDelay = isGemini ? 80 : 250;
-    const captureStep = isGemini ? Math.floor(clientH() / 2) : clientH() - 50;
+    const captureDelay = isClaude ? 60 : 250;
+    const captureStep = isClaude ? Math.floor(clientH() * 1.5) : clientH() - 50;
+
+    let lastProgressAt = 0;
 
     while (true) {
       checkCancelled();
@@ -642,23 +907,36 @@
         try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
       });
 
-      await new Promise(r => setTimeout(r, captureDelay));
+      await sleep(captureDelay);
       captureVisible();
 
-      if (ordered.length % 10 === 0) {
+      if (Date.now() - lastProgressAt > 500) {
+        lastProgressAt = Date.now();
         updateProgress(`Captured ${ordered.length} messages...`);
       }
 
       const top = currentTop();
       if (top === lastTop) {
         scrapeNoProgressCount++;
-        if (scrapeNoProgressCount > 8) break;
+        await sleep(200);
+        if (scrapeNoProgressCount > 12) break;
       } else {
         scrapeNoProgressCount = 0;
       }
       lastTop = top;
     }
+
+    // Scroll to the absolute bottom and wait for the virtualizer to render
+    // the last messages before the final capture.
+    const maxScroll = getMaxScrollHeight();
+    scrollTopTo(maxScroll);
+    getScrollableElements().forEach(el => {
+      try { el.dispatchEvent(new Event('scroll', { bubbles: true })); } catch(e) {}
+    });
+    await sleep(400);
     captureVisible();
+
+    } // end DOM scrape path
 
     if (!ordered.length) {
       throw new Error('No messages could be parsed in the DOM.');
@@ -709,12 +987,12 @@
             }
             // Fall back to fetch if canvas didn't work (e.g. data: URLs or other blob types)
             if (!blob || !blob.size) {
-              const res = await fetch(item.url);
+              const res = await fetch(item.url, { signal: abortController.signal });
               if (!res.ok) throw new Error('HTTP ' + res.status);
               blob = await res.blob();
             }
           } else {
-            const res = await fetch(item.url);
+            const res = await fetch(item.url, { signal: abortController.signal });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             blob = await res.blob();
           }
@@ -740,8 +1018,12 @@
       }
     }
 
-    const title = document.title.replace(/[-|].*(Claude|ChatGPT|Gemini).*/i, '').trim() || (`${siteName} Conversation`);
+    const title = (claudeApiData && claudeApiData.name) ||
+      document.title.replace(/[-|].*(Claude|ChatGPT|Gemini|Grok).*/i, '').trim() ||
+      (`${siteName} Conversation`);
     const date = new Date().toISOString();
+
+    document.removeEventListener('__exportCancel', onExportCancel);
 
     return {
       title,

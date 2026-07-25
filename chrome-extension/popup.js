@@ -51,15 +51,46 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const tabs = await chrome.tabs.query({});
-      
-      // Filter for ChatGPT, Claude, and Gemini tabs
+
+      // Filter for ChatGPT, Claude, and Gemini tabs. A tab that is still
+      // loading when the popup opens has an empty url; pendingUrl holds
+      // its destination.
+      const tabUrl = (tab) => (tab.url || tab.pendingUrl || "").toLowerCase();
       detectedTabs = tabs.filter(tab => {
-        if (!tab.url) return false;
-        const url = tab.url.toLowerCase();
-        return url.includes("chatgpt.com") || 
-               url.includes("claude.ai") || 
-               url.includes("gemini.google.com");
+        const url = tabUrl(tab);
+        return url.includes("chatgpt.com") ||
+               url.includes("chat.openai.com") ||
+               url.includes("claude.ai") ||
+               url.includes("claude.com") ||
+               url.includes("gemini.google.com") ||
+               url.includes("grok.com");
       });
+
+      // Diagnostic: tally every open tab by hostname so missing-tab
+      // reports are debuggable ("N tabs across M windows" + AI hosts).
+      const hostCounts = {};
+      tabs.forEach(t => {
+        try { const h = new URL(t.url || t.pendingUrl || "about:blank").hostname || "(none)"; hostCounts[h] = (hostCounts[h] || 0) + 1; } catch (e) {}
+      });
+      const windowCount = new Set(tabs.map(t => t.windowId)).size;
+      const aiHosts = Object.entries(hostCounts)
+        .filter(([h]) => /chatgpt|openai|claude|gemini|grok/.test(h))
+        .map(([h, n]) => `${h}: ${n}`)
+        .join(", ");
+      logStatus(`Scanned ${tabs.length} tabs in ${windowCount} window(s). AI hosts: ${aiHosts || "none"}.`, "info");
+
+      // Surface the tab the popup was opened on: sort it to the top of
+      // the list and flag it, so it's findable among many similar rows.
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const activeTabId = activeTab ? activeTab.id : null;
+      if (activeTabId !== null) {
+        detectedTabs.sort((a, b) => (b.id === activeTabId) - (a.id === activeTabId));
+        if (activeTab && !detectedTabs.some(t => t.id === activeTabId)) {
+          let h = "";
+          try { h = new URL(activeTab.url || activeTab.pendingUrl || "about:blank").hostname; } catch (e) {}
+          logStatus(`Note: the tab you're on (${h || "unknown"}) is not a supported chat tab.`, "error");
+        }
+      }
 
       if (detectedTabs.length === 0) {
         selectAllContainer.style.display = "none";
@@ -69,7 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <div class="no-tabs-icon">💬</div>
             <p>No active AI chat tabs found.</p>
             <p style="font-size: 11px; margin-top: 4px; color: #64748b;">
-              Open ChatGPT, Claude.ai, or Google Gemini and check back.
+              Open ChatGPT, Claude.ai, Google Gemini, or Grok and check back.
             </p>
           </div>
         `;
@@ -85,23 +116,29 @@ document.addEventListener("DOMContentLoaded", () => {
       detectedTabs.forEach((tab) => {
         const item = document.createElement("div");
         item.className = "tab-item";
+        const isCurrent = tab.id === activeTabId;
+        if (isCurrent) item.classList.add("current-tab");
 
         // Determine site and badge style
         let siteClass = "site-chatgpt";
         let siteLabel = "ChatGPT";
         const url = tab.url.toLowerCase();
-        if (url.includes("claude.ai")) {
+        if (url.includes("claude.ai") || url.includes("claude.com")) {
           siteClass = "site-claude";
           siteLabel = "Claude";
         } else if (url.includes("gemini.google.com")) {
           siteClass = "site-gemini";
           siteLabel = "Gemini";
+        } else if (url.includes("grok.com")) {
+          siteClass = "site-grok";
+          siteLabel = "Grok";
         }
 
         item.innerHTML = `
           <input type="checkbox" class="tab-checkbox tab-select" data-tab-id="${tab.id}" checked />
           <span class="site-badge ${siteClass}">${siteLabel}</span>
           <span class="tab-title" title="${escapeHtml(tab.title || "")}">${escapeHtml(tab.title || "Untitled Chat")}</span>
+          ${isCurrent ? '<span class="site-badge current-badge">THIS TAB</span>' : ''}
         `;
         tabList.appendChild(item);
       });
