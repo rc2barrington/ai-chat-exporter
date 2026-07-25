@@ -94,7 +94,7 @@
 
       /* Tabs list */
       .tab-list-container {
-        max-height: 160px;
+        max-height: 340px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
@@ -163,6 +163,24 @@
         background: rgba(59, 130, 246, 0.15);
         border: 1px solid rgba(59, 130, 246, 0.3);
         color: #60a5fa;
+      }
+
+      .site-grok {
+        background: rgba(148, 163, 184, 0.15);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        color: #cbd5e1;
+      }
+
+      .tab-item.current-tab {
+        border-color: rgba(124, 58, 237, 0.6);
+        background: rgba(124, 58, 237, 0.08);
+      }
+
+      .current-badge {
+        background: rgba(124, 58, 237, 0.2);
+        border: 1px solid rgba(124, 58, 237, 0.5);
+        color: #a78bfa;
+        min-width: 0;
       }
 
       .tab-title {
@@ -377,7 +395,7 @@
         <div class="option-row">
           <div class="option-info">
             <span class="option-label">Include Thinking</span>
-            <span class="option-desc">Export Claude thinking blocks</span>
+            <span class="option-desc">Export Claude &amp; Grok thinking blocks</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="toggle-thinking" checked />

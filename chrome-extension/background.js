@@ -3,14 +3,14 @@
 
 let isCancelled = false;
 let isExporting = false;
+let currentExportTabId = null;
 let logsList = [];
-const originalTabPositions = new Map(); // tabId -> { windowId, index }
 
 // Log status message and cache it, then broadcast to popup if open
 function logProgress(message, type = "info") {
   const time = new Date().toLocaleTimeString();
   console.log(`[${type.toUpperCase()}] [${time}] ${message}`);
-  
+
   // Store the log in logsList
   logsList.push({ message, type, time });
   if (logsList.length > 200) {
@@ -78,7 +78,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     isCancelled = false;
     isExporting = true;
     logsList = [];
-    
+
     runBatchExport(request.tabs, request.options)
       .then(() => {
         isExporting = false;
@@ -92,7 +92,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         isExporting = false;
         logProgress(`Batch export failed: ${err.message || err}`, "error");
       });
-    
+
     sendResponse({ status: "started" });
     return true;
   }
@@ -100,6 +100,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "cancelExport") {
     isCancelled = true;
     logProgress("Cancelling export request...", "info");
+    if (currentExportTabId) {
+      try {
+        chrome.tabs.sendMessage(currentExportTabId, { action: "cancelExport" }, () => {
+          void chrome.runtime.lastError;
+        });
+      } catch (e) {}
+    }
     sendResponse({ status: "cancelled" });
     return true;
   }
@@ -112,13 +119,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Legacy pop-out request from older content scripts: acknowledge and do
+  // nothing. Window manipulation (pop-out, resize, focus-steal) is gone —
+  // hidden tabs are kept alive by the visibility patch + wake pulses instead.
   if (request.action === "popOutTab") {
-    if (sender && sender.tab && sender.tab.id) {
-      popOutTab(sender.tab.id)
-        .then(() => sendResponse({ status: "success" }))
-        .catch((err) => sendResponse({ status: "error", error: err.message || String(err) }));
-      return true; // Keep response channel open for async response
-    }
+    sendResponse({ status: "success" });
+    return true;
+  }
+
+});
+
+
+// ----- TEST HOOK -----
+// Allows starting an export via externally_connectable (web page → extension).
+function handleTestExport(tabId, sendResponse) {
+  if (isExporting) return false;
+  isCancelled = false;
+  isExporting = true;
+  logsList = [];
+  logProgress("[TEST HOOK] Auto-export triggered.", "info");
+  runBatchExport([tabId], {
+    includeThinking: true,
+    includeTools: true,
+    includeMedia: false
+  })
+    .then(() => {
+      isExporting = false;
+      logProgress(isCancelled ? "Batch export was cancelled." : "Batch export sequence completed.",
+        isCancelled ? "error" : "success");
+    })
+    .catch((err) => {
+      isExporting = false;
+      logProgress(`Batch export failed: ${err.message || err}`, "error");
+    });
+  sendResponse({ status: "started" });
+  return true;
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request && request.action === "testExport" && sender && sender.tab) {
+    return handleTestExport(sender.tab.id, sendResponse);
+  }
+});
+
+// External messages from web pages (via externally_connectable)
+chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
+  if (request && request.action === "testExport" && sender && sender.tab) {
+    return handleTestExport(sender.tab.id, sendResponse);
   }
 });
 
@@ -139,13 +186,29 @@ async function runBatchExport(targetTabIds, options) {
         break;
       }
 
+      let exportWindowId = null;
+      let origWindowId = null;
+      let origIndex = 0;
+
       try {
         const tabObj = await chrome.tabs.get(tabId);
         const tabTitle = tabObj ? tabObj.title : `Tab ${tabId}`;
 
-        logProgress(`Activating tab: "${tabTitle}"...`, "info");
-        await chrome.tabs.update(tabId, { active: true });
-        // Give layout engine time to refresh active state
+        currentExportTabId = tabId;
+        origWindowId = tabObj.windowId;
+        origIndex = tabObj.index;
+        try {
+          const win = await chrome.windows.create({
+            tabId: tabId,
+            focused: false,
+            state: "normal"
+          });
+          exportWindowId = win.id;
+          logProgress(`Opened export window for "${tabTitle}".`, "info");
+        } catch (e) {
+          logProgress(`Could not open export window, exporting in place.`, "info");
+          await chrome.tabs.update(tabId, { active: true });
+        }
         await new Promise(r => setTimeout(r, 600));
 
         if (isCancelled) break;
@@ -159,11 +222,30 @@ async function runBatchExport(targetTabIds, options) {
         if (isCancelled) break;
 
         logProgress(`Executing scraper on webpage...`, "info");
+
+        // Wake pulse: keeps the service worker alive and lets the content
+        // script's sleep() resolve via __exportWake even if the window
+        // ends up behind other windows.
+        const wakeInterval = setInterval(() => {
+          chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: () => { document.dispatchEvent(new Event('__exportWake')); }
+          }).catch(() => {});
+        }, 500);
+
+        const EXPORT_TIMEOUT_MS = 30 * 60 * 1000;
         const response = await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            clearInterval(wakeInterval);
+            reject(new Error("Export timed out after 30 minutes."));
+          }, EXPORT_TIMEOUT_MS);
+
           chrome.tabs.sendMessage(tabId, {
             action: "exportChat",
             options: options
           }, (res) => {
+            clearInterval(wakeInterval);
+            clearTimeout(timer);
             if (chrome.runtime.lastError) {
               reject(new Error(chrome.runtime.lastError.message));
             } else {
@@ -176,7 +258,7 @@ async function runBatchExport(targetTabIds, options) {
 
         if (response && response.status === "success") {
           const data = response.data;
-          
+
           if (isCancelled) break;
 
           logProgress(`Delegating file compile to offscreen document...`, "info");
@@ -211,7 +293,7 @@ async function runBatchExport(targetTabIds, options) {
                 const listener = (delta) => {
                   if (delta.id === downloadId && delta.state && delta.state.current !== 'in_progress') {
                     chrome.downloads.onChanged.removeListener(listener);
-                    
+
                     if (delta.state.current === 'complete') {
                       logProgress(`Successfully downloaded: ${filename}`, "success");
                       resolve();
@@ -236,7 +318,17 @@ async function runBatchExport(targetTabIds, options) {
       } catch (err) {
         logProgress(`Failed to process tab: ${err.message || err}`, "error");
       } finally {
-        await restoreTab(tabId);
+        currentExportTabId = null;
+        // Move the tab back to its original window and close the temp one.
+        if (exportWindowId) {
+          try {
+            await chrome.tabs.move(tabId, { windowId: origWindowId, index: origIndex });
+          } catch (e) {}
+          try {
+            await chrome.windows.remove(exportWindowId);
+          } catch (e) {}
+          exportWindowId = null;
+        }
       }
     }
 
@@ -255,61 +347,3 @@ async function runBatchExport(targetTabIds, options) {
   }
 }
 
-async function popOutTab(tabId) {
-  try {
-    const tabObj = await chrome.tabs.get(tabId);
-    if (!tabObj) return;
-
-    // Check if the tab is already popped out
-    if (originalTabPositions.has(tabId)) return;
-
-    // Save its original position
-    originalTabPositions.set(tabId, {
-      windowId: tabObj.windowId,
-      index: tabObj.index
-    });
-
-    logProgress(`Popping out tab "${tabObj.title}" to background window to keep layout/IntersectionObserver active...`, "info");
-
-    // Move to a new background window (focused: false)
-    await chrome.windows.create({
-      tabId: tabId,
-      focused: false,
-      type: "normal"
-    });
-  } catch (err) {
-    console.error("Failed to pop out tab:", err);
-  }
-}
-
-async function restoreTab(tabId) {
-  try {
-    const pos = originalTabPositions.get(tabId);
-    if (pos) {
-      originalTabPositions.delete(tabId);
-      
-      // Check if original window still exists
-      let windowExists = false;
-      try {
-        const win = await chrome.windows.get(pos.windowId);
-        windowExists = !!win;
-      } catch (e) {
-        windowExists = false;
-      }
-
-      if (windowExists) {
-        logProgress("Restoring tab to its original window...", "info");
-        await chrome.tabs.move(tabId, {
-          windowId: pos.windowId,
-          index: pos.index
-        });
-      } else {
-        // If original window was closed, create a new window for it
-        logProgress("Original window closed. Creating a new window for this tab...", "info");
-        await chrome.windows.create({ tabId: tabId, focused: true });
-      }
-    }
-  } catch (err) {
-    console.error("Failed to restore tab:", err);
-  }
-}
