@@ -31,7 +31,7 @@ export function generateMarkdown(session, opts = {}) {
   }
 
   md += `# ${session.title}${NL}${NL}`;
-  const sourceLabel = session.source || "Claude Desktop";
+  const sourceLabel = session.source || "Claude Code";
   if (session.date) {
     md += `> Exported from ${sourceLabel} on ${session.date}${NL}${NL}`;
   } else {
