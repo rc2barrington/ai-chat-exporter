@@ -1,4 +1,4 @@
-// Browser console export script for ChatGPT, Claude.ai, Gemini.
+// Browser console export script for ChatGPT, Claude.ai, Gemini, Grok.
 // Stringified so it can be copied to the clipboard verbatim.
 //
 // v2 — adds media bundling:
@@ -15,18 +15,23 @@
 //   - Preserve fenced code blocks via a DOM walker.
 //   - Anchor Claude.ai detection on `main` instead of a depth heuristic.
 
-export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini) — bundles media into a .zip
+export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini, Grok) — bundles media into a .zip
 (async function() {
-  var isChatGPT = !!document.querySelector('[data-message-author-role]');
-  var isClaude = !!document.querySelector('[data-testid="user-message"]');
-  var isGemini = !!document.querySelector('user-query');
+  // Grok is tested first: it marks messages with [data-testid="user-message"]
+  // too, which is also Claude's selector, so a hostname check has to break the
+  // tie before the Claude branch can claim the page.
+  var GROK_SEL = '[data-testid="user-message"],[data-testid="assistant-message"]';
+  var isGrok = /(^|\\.)grok\\.com$/.test(location.hostname) && !!document.querySelector(GROK_SEL);
+  var isChatGPT = !isGrok && !!document.querySelector('[data-message-author-role]');
+  var isClaude = !isGrok && !!document.querySelector('[data-testid="user-message"]');
+  var isGemini = !isGrok && !!document.querySelector('user-query');
 
-  if (!isChatGPT && !isClaude && !isGemini) {
-    alert("No messages found. Open this on a Claude.ai, ChatGPT, or Gemini conversation.");
+  if (!isChatGPT && !isClaude && !isGemini && !isGrok) {
+    alert("No messages found. Open this on a Claude.ai, ChatGPT, Gemini, or Grok conversation.");
     return;
   }
 
-  var siteName = isChatGPT ? "ChatGPT" : (isClaude ? "Claude" : "Gemini");
+  var siteName = isGrok ? "Grok" : (isChatGPT ? "ChatGPT" : (isClaude ? "Claude" : "Gemini"));
 
   // ----- Load JSZip from a CDN. Single ESM import; falls back to .md if it fails. -----
   var JSZip = null;
@@ -194,7 +199,8 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
 
   // ----- Find scroll container, force-load all turns -----
   var firstMsg;
-  if (isChatGPT) firstMsg = document.querySelector('[data-message-author-role]');
+  if (isGrok) firstMsg = document.querySelector(GROK_SEL);
+  else if (isChatGPT) firstMsg = document.querySelector('[data-message-author-role]');
   else if (isClaude) firstMsg = document.querySelector('[data-testid="user-message"]');
   else firstMsg = document.querySelector('user-query');
 
@@ -270,8 +276,18 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
       if (txt) ordered.push({ el: el, role: role, text: txt });
     });
   }
+  function captureGrok() {
+    document.querySelectorAll(GROK_SEL).forEach(function(el) {
+      if (seen.has(el)) return;
+      seen.add(el);
+      var role = el.getAttribute('data-testid') === 'user-message' ? '## You' : '## Grok';
+      var txt = cleanText(nodeToMarkdown(el));
+      if (txt) ordered.push({ el: el, role: role, text: txt });
+    });
+  }
   function captureVisible() {
-    if (isClaude) captureClaude();
+    if (isGrok) captureGrok();
+    else if (isClaude) captureClaude();
     else if (isChatGPT) captureChatGPT();
     else captureGemini();
   }
@@ -385,7 +401,7 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
   });
 
   // ----- Markdown -----
-  var title = document.title.replace(/[-|].*(Claude|ChatGPT|Gemini).*/i, '').trim() || (siteName + ' Conversation');
+  var title = document.title.replace(/[-|].*(Claude|ChatGPT|Gemini|Grok).*/i, '').trim() || (siteName + ' Conversation');
   var date = new Date().toISOString();
   var nl = '\\n';
   var md = '---' + nl;

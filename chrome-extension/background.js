@@ -130,44 +130,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 
-// ----- TEST HOOK -----
-// Allows starting an export via externally_connectable (web page → extension).
-function handleTestExport(tabId, sendResponse) {
-  if (isExporting) return false;
-  isCancelled = false;
-  isExporting = true;
-  logsList = [];
-  logProgress("[TEST HOOK] Auto-export triggered.", "info");
-  runBatchExport([tabId], {
-    includeThinking: true,
-    includeTools: true,
-    includeMedia: false
-  })
-    .then(() => {
-      isExporting = false;
-      logProgress(isCancelled ? "Batch export was cancelled." : "Batch export sequence completed.",
-        isCancelled ? "error" : "success");
-    })
-    .catch((err) => {
-      isExporting = false;
-      logProgress(`Batch export failed: ${err.message || err}`, "error");
-    });
-  sendResponse({ status: "started" });
-  return true;
-}
-
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request && request.action === "testExport" && sender && sender.tab) {
-    return handleTestExport(sender.tab.id, sendResponse);
-  }
-});
-
-// External messages from web pages (via externally_connectable)
-chrome.runtime.onMessageExternal.addListener((request, sender, sendResponse) => {
-  if (request && request.action === "testExport" && sender && sender.tab) {
-    return handleTestExport(sender.tab.id, sendResponse);
-  }
-});
+// NOTE: there is deliberately no web-page-triggered export path. An earlier
+// "testExport" hook, reachable from any page on the supported sites via
+// externally_connectable, let a script start an export and write a file to
+// disk with no user interaction. Exports must originate from the popup.
 
 async function runBatchExport(targetTabIds, options) {
   logProgress(`Starting batch export of ${targetTabIds.length} chat(s) in background...`, "info");
