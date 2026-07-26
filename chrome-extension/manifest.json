@@ -17,9 +17,6 @@
     "*://*.gemini.google.com/*",
     "*://*.grok.com/*"
   ],
-  "externally_connectable": {
-    "matches": ["*://*.chatgpt.com/*", "*://*.claude.ai/*", "*://*.gemini.google.com/*", "*://*.grok.com/*"]
-  },
   "background": {
     "service_worker": "background.js"
   },
