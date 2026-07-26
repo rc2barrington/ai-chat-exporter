@@ -105,8 +105,8 @@ export function SessionPreview({ session, includeThinking, includeTools, include
           <h2 style={{ fontSize: 20, fontWeight: 800, color: "#ffffff", marginBottom: 8 }}># {session.title}</h2>
           <div style={{ color: "#64748b", fontStyle: "italic", fontSize: 12 }}>
             {session.date
-              ? `> Exported from ${session.source || "Claude Desktop"} on ${session.date}`
-              : `> Exported from ${session.source || "Claude Desktop"}`}
+              ? `> Exported from ${session.source || "Claude Code"} on ${session.date}`
+              : `> Exported from ${session.source || "Claude Code"}`}
           </div>
         </div>
 

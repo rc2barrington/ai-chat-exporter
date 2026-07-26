@@ -18,11 +18,11 @@ import {
   forgetDirectory,
 } from "../utils/dirHandle.js";
 
-// Shared workspace UI for any file-based source (Claude Desktop, Antigravity).
+// Shared workspace UI for any file-based source (Claude Code, Antigravity).
 // Pass:
 //   accept            file extensions to accept
 //   parseFile(file)   async (file: File) => parsedSession | null
-//   showToolToggles   bool — Claude Desktop has tool_use/tool_result; Antigravity doesn't
+//   showToolToggles   bool — Claude Code has tool_use/tool_result; Antigravity doesn't
 //   sourceLabel       header text for the dropzone
 //   noMatchHelp       optional node rendered when a scan yields zero sessions,
 //                     for sources whose files browsers tend to miss (hidden dirs)
