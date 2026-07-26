@@ -1,4 +1,4 @@
-// Parses Claude Code (and Claude Desktop) .jsonl session files.
+// Parses Claude Code .jsonl session files.
 //
 // Each line is a JSON object. Types seen in the wild:
 //   { type: "ai-title", aiTitle }        auto-generated session title

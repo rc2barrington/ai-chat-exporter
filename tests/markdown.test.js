@@ -6,7 +6,7 @@ const session = {
   date: "2026-05-01 12:00",
   startedAt: "2026-05-01T12:00:00Z",
   endedAt: "2026-05-01T12:01:00Z",
-  source: "Claude Desktop",
+  source: "Claude Code",
   messages: [
     { role: "## You", blocks: [{ type: "text", text: "hi" }] },
     {
@@ -43,7 +43,7 @@ describe("generateMarkdown", () => {
   it("emits a YAML frontmatter when requested", () => {
     const md = generateMarkdown(session, { frontmatter: true });
     expect(md.startsWith("---\n")).toBe(true);
-    expect(md).toContain("source: Claude Desktop");
+    expect(md).toContain("source: Claude Code");
     expect(md).toContain("started_at: 2026-05-01T12:00:00Z");
   });
 
