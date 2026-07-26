@@ -18,11 +18,13 @@ import {
   forgetDirectory,
 } from "../utils/dirHandle.js";
 
-// Shared workspace UI for any file-based source (Claude Code, Antigravity).
+// Shared workspace UI for any file-based source. Currently used by the
+// Claude Code tab; the folderAccess and noMatchHelp props are generic and
+// kept for future sources that need directory access.
 // Pass:
 //   accept            file extensions to accept
 //   parseFile(file)   async (file: File) => parsedSession | null
-//   showToolToggles   bool — Claude Code has tool_use/tool_result; Antigravity doesn't
+//   showToolToggles   bool — sources that carry tool_use/tool_result blocks
 //   sourceLabel       header text for the dropzone
 //   noMatchHelp       optional node rendered when a scan yields zero sessions,
 //                     for sources whose files browsers tend to miss (hidden dirs)
@@ -77,7 +79,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
       try {
         const text = await readFileAsText(file);
         // Pass the full file set (not just `valid`) so parsers can find
-        // sidecar files of other extensions (e.g. Antigravity's .metadata.json).
+        // sidecar files of other extensions alongside each transcript.
         const parsed = await parseFile(file, text, files);
         if (parsed && parsed.messages && parsed.messages.length > 0) {
           results.push({ ...parsed, fileName: file.name });

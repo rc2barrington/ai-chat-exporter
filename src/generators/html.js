@@ -45,9 +45,7 @@ export function generateHtml(session, opts = {}) {
 
   for (const msg of session.messages) {
     const isUser = msg.role === "## You";
-    const roleLabel = isUser
-      ? "🧑 You"
-      : (session.source === "Google Antigravity" ? "✨ Antigravity" : "🤖 Claude");
+    const roleLabel = isUser ? "🧑 You" : "🤖 Claude";
     
     let blocksHtml = "";
 

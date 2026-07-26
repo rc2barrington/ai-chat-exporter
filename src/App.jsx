@@ -2,12 +2,10 @@ import { useState } from "react";
 import "./App.css";
 import { BrowserChatsTab } from "./components/BrowserChatsTab.jsx";
 import { ClaudeCodeTab } from "./components/ClaudeCodeTab.jsx";
-import { AntigravityTab } from "./components/AntigravityTab.jsx";
 
 const TABS = [
   { key: "web", label: "🌐 Browser Chats", render: () => <BrowserChatsTab /> },
   { key: "cli", label: "💻 Claude Code", render: () => <ClaudeCodeTab /> },
-  { key: "antigravity", label: "✨ Google Antigravity", render: () => <AntigravityTab /> },
 ];
 
 export default function App() {
@@ -25,7 +23,7 @@ export default function App() {
             <span className="title-highlight">Exporter</span>
           </h1>
           <p className="subtitle">
-            Export any web-based AI chat, local Claude Code session, or Google Antigravity transcript as a beautifully formatted Markdown file. 100% private and runs entirely locally.
+            Export any web-based AI chat or local Claude Code session as a beautifully formatted Markdown file. 100% private and runs entirely locally.
           </p>
         </div>
 

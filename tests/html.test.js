@@ -12,7 +12,7 @@ const session = {
   date: "2026-05-01 12:00",
   startedAt: "2026-05-01T12:00:00Z",
   endedAt: "2026-05-01T12:01:00Z",
-  source: "Claude Desktop",
+  source: "Claude Code",
   messages: [
     { role: "## You", blocks: [{ type: "text", text: "hi there" }] },
     {
@@ -31,7 +31,7 @@ describe("generateHtml", () => {
     expect(html).toContain("hi there");
     expect(html).toContain("hello back");
     expect(html).toContain("Test Session");
-    expect(html).toContain("Exported from Claude Desktop on 2026-05-01 12:00");
+    expect(html).toContain("Exported from Claude Code on 2026-05-01 12:00");
     // Regression: these were once emitted literally due to escaped template expressions.
     expect(html).not.toContain("${bodyContent}");
     expect(html).not.toContain("${escapeHtml");

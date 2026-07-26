@@ -4,10 +4,9 @@ A utility to export your AI conversations into beautifully formatted Markdown fi
 
 ## Features
 
-- **Chrome Extension** scans open ChatGPT, Claude.ai, and Gemini tabs, activates them sequentially to bypass background throttling, and automatically exports them without manual console pasting.
+- **Chrome Extension** scans open ChatGPT, Claude.ai, Gemini, and Grok tabs, exports each in its own unthrottled window, and downloads them without manual console pasting.
 - **Browser Chats** export web-based conversations using a paste-in console script (fallback if you don't use the extension).
-- **Claude Desktop App** parses local `.jsonl` transcripts and renders thinking blocks, tool calls, and tool results (each toggleable). Supports bulk-scan of an entire `~/.claude/projects/` folder with selectable per-session export.
-- **Google Antigravity** parses both transcript formats the IDE writes under `~/.gemini/antigravity/brain/<session-uuid>/`: newer builds' `.system_generated/logs/transcript.jsonl` (with thinking, tool calls, and tool results, each toggleable) and older builds' `conversation_history.md`. A one-click **Open my Antigravity chats** button (File System Access API) lets you grant the `brain/` folder once; the browser remembers the directory handle so future clicks reopen it straight away with no re-navigating (falls back to drag-and-drop where the API is unavailable). Bulk-scans every session and pairs each markdown transcript with its `.metadata.json` sidecar for accurate timestamps.
+- **Claude Code** parses local `.jsonl` transcripts and renders thinking blocks, tool calls, and tool results (each toggleable). Supports bulk-scan of an entire `~/.claude/projects/` folder with selectable per-session export.
 - **Live preview** of every session, rendered with `marked` + `DOMPurify` so code blocks, lists, tables, and inline formatting display correctly.
 - **Bulk export to `.zip`** via JSZip (single-prompt save instead of N separate downloads).
 - **Copy as Markdown** alongside the existing Download button.
@@ -47,8 +46,7 @@ src/
   App.jsx                       tab shell
   parsers/
     browserScript.js            string of the paste-in console export script
-    claudeJsonl.js              .jsonl line-by-line parser, normalizes blocks
-    antigravity.js              conversation_history.md splitter
+    claudeJsonl.js              .jsonl parser: prunes edited branches, normalizes blocks
   generators/
     markdown.js                 session -> markdown with options
   utils/
@@ -59,8 +57,7 @@ src/
     zip.js                      JSZip bundler with filename de-duplication
   components/
     BrowserChatsTab.jsx
-    ClaudeDesktopTab.jsx
-    AntigravityTab.jsx
+    ClaudeCodeTab.jsx
     SessionWorkspace.jsx        shared dropzone + list + preview flow
     SessionList.jsx             search/filter + sort
     SessionPreview.jsx          macOS-window-styled live preview
@@ -69,49 +66,32 @@ src/
     Switch.jsx                  toggle row
 tests/
   claudeJsonl.test.js
-  antigravity.test.js
   markdown.test.js
+  html.test.js
 ```
 
 ## Format references
 
-### Claude Desktop `.jsonl`
+### Claude Code `.jsonl`
 
 Each line is one JSON object. Recognized shapes:
 
 ```jsonc
-{ "type": "ai-title", "aiTitle": "string" }
-{ "type": "user",      "message": { "content": "string | block[]" }, "timestamp": "ISO" }
-{ "type": "assistant", "message": { "content": "block[]" }, "timestamp": "ISO", "requestId": "string" }
+{ "type": "ai-title",     "aiTitle": "string" }
+{ "type": "custom-title", "customTitle": "string" }
+{ "type": "user",      "message": { "content": "string | block[]" }, "timestamp": "ISO", "uuid": "…", "parentUuid": "…" }
+{ "type": "assistant", "message": { "content": "block[]" }, "timestamp": "ISO", "requestId": "…", "uuid": "…", "parentUuid": "…" }
 ```
 
 Block types rendered: `text`, `thinking`, `tool_use`, `tool_result`. Consecutive assistant entries sharing a `requestId` are merged. `tool_result` blocks that arrive inside a "user" turn are attached to the preceding assistant turn rather than emitted as a "You" message.
 
-### Antigravity `transcript.jsonl` (newer builds)
+Three structural details drive the parser:
 
-Stored at `~/.gemini/antigravity/brain/<uuid>/.system_generated/logs/transcript.jsonl`. One JSON object per line:
+- **The log is a forest, not a list.** `uuid` / `parentUuid` form a tree; editing or retrying a message forks it and both branches persist. At each fork only the subtree containing the newest activity is kept, so rewritten messages don't appear. A single file also holds several independent root chains (resuming starts a new root), so every root is preserved rather than following one chain back from the newest leaf.
+- **Not every line is conversation.** `isMeta` marks injected context (system reminders, hook output) and `isSidechain` marks inlined subagent transcripts; both are skipped. So are the `queue-operation`, `last-prompt`, `mode`, `system`, `attachment`, and `pr-link` bookkeeping lines.
+- **Slash commands carry scaffolding.** A `/model` invocation is stored as `<command-name>`, `<command-message>`, `<command-args>`, and `<local-command-stdout>` wrappers inside the user turn. The invocation is reconstructed and the wrappers dropped; turns that were nothing but scaffolding are discarded.
 
-```jsonc
-{ "step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "created_at": "ISO", "content": "string" }
-{ "step_index": 2, "source": "MODEL", "type": "PLANNER_RESPONSE", "thinking": "string", "content": "string", "tool_calls": [{ "name": "view_file", "args": {} }] }
-{ "step_index": 3, "source": "MODEL", "type": "RUN_COMMAND", "status": "DONE", "content": "tool output" }
-```
-
-`USER_EXPLICIT` lines become "You" turns. Consecutive `MODEL` lines merge into one assistant turn: `thinking` → thinking block, `tool_calls` → tool_use blocks, and `content` → a text block (or a tool_result block for tool-output step types like `RUN_COMMAND` / `VIEW_FILE` / `GREP_SEARCH`). `SYSTEM` lines (ephemeral status, checkpoints, history dumps) are skipped. `startedAt` / `endedAt` come from the min/max `created_at`.
-
-### Antigravity `conversation_history.md` (older builds)
-
-```
-# Conversation History
-
-## User Message 1
-> quoted user text
-
-## Assistant Response 1
-free-form markdown
-```
-
-Section headers are matched on the literal `## User Message N` / `## Assistant Response N` form. The sidecar `conversation_history.md.metadata.json` (if dropped alongside) supplies `updatedAt`.
+A user-set `custom-title` wins over the generated `ai-title`. Encrypted thinking blocks (a `signature` with no `thinking` text) are skipped.
 
 ## Privacy
 

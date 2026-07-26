@@ -169,11 +169,9 @@ export function SessionPreview({ session, includeThinking, includeTools, include
   );
 }
 
-function roleNameFor(source) {
-  if (source === "Google Antigravity") return "Antigravity";
+function roleNameFor() {
   return "Claude";
 }
-function roleEmojiFor(source) {
-  if (source === "Google Antigravity") return "✨";
+function roleEmojiFor() {
   return "🤖";
 }
