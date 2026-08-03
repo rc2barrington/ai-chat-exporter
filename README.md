@@ -7,6 +7,7 @@ A utility to export your AI conversations into beautifully formatted Markdown fi
 - **Chrome Extension** scans open ChatGPT, Claude.ai, Gemini, and Grok tabs, exports each in its own unthrottled window, and downloads them without manual console pasting.
 - **Browser Chats** export web-based conversations using a paste-in console script (fallback if you don't use the extension).
 - **Claude Code** parses local `.jsonl` transcripts and renders thinking blocks, tool calls, and tool results (each toggleable). Supports bulk-scan of an entire `~/.claude/projects/` folder with selectable per-session export.
+- **Replies only, plain text (`.txt`)** exports just the assistant's replies with markdown syntax stripped — no user turns, thinking logs, tool calls, titles, or metadata. Fenced code keeps its contents verbatim. Applies to the download, the copy button, and bulk `.zip` export alike.
 - **Live preview** of every session, rendered with `marked` + `DOMPurify` so code blocks, lists, tables, and inline formatting display correctly.
 - **Bulk export to `.zip`** via JSZip (single-prompt save instead of N separate downloads).
 - **Copy as Markdown** alongside the existing Download button.
@@ -49,6 +50,7 @@ src/
     claudeJsonl.js              .jsonl parser: prunes edited branches, normalizes blocks
   generators/
     markdown.js                 session -> markdown with options
+    plainText.js                session -> assistant replies only, markdown stripped
   utils/
     download.js                 sanitizeFilename, downloadBlob, copyToClipboard
     files.js                    recursive folder reading via webkitGetAsEntry
@@ -67,6 +69,7 @@ src/
 tests/
   claudeJsonl.test.js
   markdown.test.js
+  plainText.test.js
   html.test.js
 ```
 
