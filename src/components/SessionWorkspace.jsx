@@ -6,7 +6,6 @@ import { Switch } from "./Switch.jsx";
 import { readFileAsText } from "../utils/files.js";
 import { generateMarkdown } from "../generators/markdown.js";
 import { generateHtml } from "../generators/html.js";
-import { generatePlainText } from "../generators/plainText.js";
 import { downloadBlob, sanitizeFilename, copyToClipboard } from "../utils/download.js";
 import { StatsPanel } from "./StatsPanel.jsx";
 import { bundleZip } from "../utils/zip.js";
@@ -34,7 +33,6 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
   const [includeTools, setIncludeTools] = useState(false);
   const [includeResults, setIncludeResults] = useState(false);
   const [frontmatter, setFrontmatter] = useState(true);
-  const [repliesOnlyText, setRepliesOnlyText] = useState(false);
   const [truncateChars, setTruncateChars] = useState(2000);
   const [parsedSession, setParsedSession] = useState(null);
   const [availableSessions, setAvailableSessions] = useState([]);
@@ -113,18 +111,9 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
     }
   };
 
-  // In replies-only mode every text export becomes a .txt of the assistant's
-  // responses; the standalone-HTML button is unaffected.
-  const exportBody = (session) =>
-    repliesOnlyText ? generatePlainText(session) : generateMarkdown(session, opts);
-  const exportExt = repliesOnlyText ? "txt" : "md";
-
   const downloadSingle = (session) => {
-    downloadBlob(
-      `${sanitizeFilename(session.title, "export")}.${exportExt}`,
-      exportBody(session),
-      "text/plain;charset=utf-8"
-    );
+    const md = generateMarkdown(session, opts);
+    downloadBlob(`${sanitizeFilename(session.title, "export")}.md`, md);
   };
 
   const downloadSingleHtml = (session) => {
@@ -134,7 +123,8 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
 
   const handleCopy = async () => {
     if (!parsedSession) return;
-    const ok = await copyToClipboard(exportBody(parsedSession));
+    const md = generateMarkdown(parsedSession, opts);
+    const ok = await copyToClipboard(md);
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
@@ -149,8 +139,8 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
       return;
     }
     const files = picks.map((s) => ({
-      filename: `${sanitizeFilename(s.title, "export")}.${exportExt}`,
-      content: exportBody(s),
+      filename: `${sanitizeFilename(s.title, "export")}.md`,
+      content: generateMarkdown(s, opts),
     }));
     const blob = await bundleZip(files);
     downloadBlob(`ai-chat-export-${new Date().toISOString().slice(0, 10)}.zip`, blob, "application/zip");
@@ -227,19 +217,12 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
       <div className="card-panel">
         <p className="card-title">Export Settings</p>
         <div className="config-group">
-          <Switch
-            label="Replies only, plain text (.txt)"
-            hint="Exports just the assistant's replies as a .txt file with markdown formatting stripped. Your own messages, thinking logs, and tool calls are left out, so the options below don't apply."
-            checked={repliesOnlyText}
-            onChange={setRepliesOnlyText}
-          />
           {showToolToggles && (
             <Switch
               label="Include Thinking Logs"
               hint="Exports the assistant's internal reasoning inside a collapsible element"
               checked={includeThinking}
               onChange={setIncludeThinking}
-              disabled={repliesOnlyText}
             />
           )}
           {showToolToggles && (
@@ -248,7 +231,6 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
               hint="Exports terminal command runs, file edits, and tool calls"
               checked={includeTools}
               onChange={setIncludeTools}
-              disabled={repliesOnlyText}
             />
           )}
           {showToolToggles && (
@@ -257,7 +239,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
               hint="Exports the output produced by tool executions (paired with above)"
               checked={includeResults}
               onChange={setIncludeResults}
-              disabled={!includeTools || repliesOnlyText}
+              disabled={!includeTools}
             />
           )}
           <Switch
@@ -265,7 +247,6 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
             hint="Prepend a YAML metadata block (works well in Obsidian, Hugo, Jekyll)"
             checked={frontmatter}
             onChange={setFrontmatter}
-            disabled={repliesOnlyText}
           />
           {showToolToggles && (
             <div className="config-item">
@@ -386,10 +367,10 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
                 {availableSessions.length > 0 ? "← Back to List" : "Change File"}
               </button>
               <button onClick={handleCopy} className="btn-primary">
-                {copied ? "✓ Copied" : repliesOnlyText ? "📋 Copy Replies" : "📋 Copy as Markdown"}
+                {copied ? "✓ Copied" : "📋 Copy as Markdown"}
               </button>
               <button onClick={() => downloadSingle(parsedSession)} className="btn-primary btn-success">
-                {repliesOnlyText ? "💾 Download .txt" : "💾 Download Markdown"}
+                💾 Download Markdown
               </button>
               <button
                 onClick={() => downloadSingleHtml(parsedSession)}
