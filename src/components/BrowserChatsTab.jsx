@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { consoleCode } from "../parsers/browserScript.js";
+import { buildConsoleCode } from "../parsers/browserScript.js";
 import { copyToClipboard } from "../utils/download.js";
+import { Switch } from "./Switch.jsx";
 
-const steps = [
+const stepsFor = (repliesOnlyText) => [
   {
     num: "01",
     title: "Open a chat conversation",
-    detail: "Go to chatgpt.com, gemini.google.com, or claude.ai and open any conversation you want to export.",
+    detail: "Go to chatgpt.com, gemini.google.com, claude.ai, or grok.com and open any conversation you want to export.",
     icon: "💬",
   },
   {
@@ -18,16 +19,22 @@ const steps = [
   {
     num: "03",
     title: "Paste & run the script",
-    detail: 'Click "Copy Script" above, paste into the console with Cmd+V, and press Enter. The .md file downloads instantly.',
+    detail: `Click "Copy Console Script" above, paste into the console with Cmd+V, and press Enter. The ${
+      repliesOnlyText ? ".txt file" : ".md file"
+    } downloads instantly.`,
     icon: "📥",
   },
 ];
 
 export function BrowserChatsTab() {
   const [copied, setCopied] = useState(false);
+  const [repliesOnlyText, setRepliesOnlyText] = useState(false);
+
+  const script = buildConsoleCode({ repliesOnlyText });
+  const steps = stepsFor(repliesOnlyText);
 
   const handleCopy = async () => {
-    const ok = await copyToClipboard(consoleCode);
+    const ok = await copyToClipboard(script);
     if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
@@ -56,8 +63,22 @@ export function BrowserChatsTab() {
           {copied ? "✓ Copied to Clipboard!" : "📋 Copy Console Script"}
         </button>
         <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.6, marginTop: 12 }}>
-          Pasting this script in your browser console scrolls, dedupes (by element identity, not text prefix), preserves fenced code blocks, and downloads your conversation with a YAML frontmatter header.
+          {repliesOnlyText
+            ? "Pasting this script in your browser console scrolls, dedupes, and saves a .txt containing only the assistant's replies with markdown formatting stripped. Your own messages and any images are left out."
+            : "Pasting this script in your browser console scrolls, dedupes (by element identity, not text prefix), preserves fenced code blocks, and downloads your conversation with a YAML frontmatter header."}
         </p>
+      </div>
+
+      <div className="card-panel">
+        <p className="card-title">Export Settings</p>
+        <div className="config-group">
+          <Switch
+            label="Replies only, plain text (.txt)"
+            hint="Saves a .txt of just the assistant's replies with markdown formatting removed. Your own messages, images, and the YAML header are left out."
+            checked={repliesOnlyText}
+            onChange={setRepliesOnlyText}
+          />
+        </div>
       </div>
 
       <div style={{ marginBottom: 32 }}>
@@ -117,7 +138,7 @@ export function BrowserChatsTab() {
             fontFamily: "JetBrains Mono, monospace",
           }}
         >
-          {consoleCode}
+          {script}
         </pre>
       </details>
     </div>

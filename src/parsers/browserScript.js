@@ -1,3 +1,5 @@
+import { stripMarkdown } from "../utils/stripMarkdown.js";
+
 // Browser console export script for ChatGPT, Claude.ai, Gemini, Grok.
 // Stringified so it can be copied to the clipboard verbatim.
 //
@@ -15,8 +17,24 @@
 //   - Preserve fenced code blocks via a DOM walker.
 //   - Anchor Claude.ai detection on `main` instead of a depth heuristic.
 
-export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini, Grok) — bundles media into a .zip
+// Builds the copyable console script.
+//
+// opts.repliesOnlyText — when true the script skips media entirely and saves a
+// .txt containing only the assistant's replies, with markdown stripped.
+export function buildConsoleCode(opts = {}) {
+  const repliesOnlyText = !!opts.repliesOnlyText;
+  const header = repliesOnlyText
+    ? "// AI Conversation Exporter — saves the assistant's replies as plain text (.txt)"
+    : "// AI Conversation Exporter (Claude, ChatGPT, Gemini, Grok) — bundles media into a .zip";
+  return `${header}
 (async function() {
+  // Replies-only mode: no media, no markdown, assistant turns only.
+  var REPLIES_ONLY_TXT = ${repliesOnlyText};
+  // Bound to an explicit name rather than pasted as a bare declaration: the
+  // production build minifies stripMarkdown's identifier (to "b" or similar),
+  // so relying on the declared name would make the copied script throw
+  // ReferenceError for every user while dev builds looked fine.
+  var stripMarkdown = ${stripMarkdown.toString()};
   // Grok is tested first: it marks messages with [data-testid="user-message"]
   // too, which is also Claude's selector, so a hostname check has to break the
   // tie before the Claude branch can claim the page.
@@ -329,6 +347,9 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
   // ----- Fetch media, build zip -----
   var failedFetches = [];
   var savedMedia = [];
+  // Replies-only output is plain text, so skip the media downloads entirely
+  // rather than fetching files that would never be referenced.
+  if (REPLIES_ONLY_TXT) mediaQueue.length = 0;
   if (JSZip && mediaQueue.length > 0) {
     var zipPreview = new JSZip();  // probe; reassigned below
     for (var i = 0; i < mediaQueue.length; i++) {
@@ -422,7 +443,21 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
   var safeBase = title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 60);
   var stamp = new Date().toISOString().slice(0, 10);
 
-  if (JSZip && (savedMedia.length > 0 || mediaQueue.length > 0)) {
+  if (REPLIES_ONLY_TXT) {
+    var replies = ordered
+      .filter(function(m) { return m.role !== '## You'; })
+      .map(function(m) {
+        // Drop the "(Uploaded Image: ...)" annotations the DOM walker adds;
+        // they are markdown scaffolding, not part of what the model said.
+        var body = m.text.replace(/^\\s*\\*\\(Uploaded [^)]*\\)\\*\\s*$/gm, '');
+        return stripMarkdown(body);
+      })
+      .filter(function(t) { return t.trim(); });
+    var txt = replies.join(nl + nl) + (replies.length ? nl : '');
+    var txtBlob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    triggerDownload(txtBlob, safeBase + '.txt');
+    console.log('[Exporter] Saved ' + safeBase + '.txt (' + replies.length + ' replies, plain text)');
+  } else if (JSZip && (savedMedia.length > 0 || mediaQueue.length > 0)) {
     var zip = new JSZip();
     zip.file('conversation.md', md);
     var folder = zip.folder('media');
@@ -457,3 +492,7 @@ export const consoleCode = `// AI Conversation Exporter (Claude, ChatGPT, Gemini
   banner.style.background = '#065f46';
   setTimeout(function() { banner.remove(); }, 4000);
 })();`;
+}
+
+// Default (markdown + media) script, used for the "view source" panel.
+export const consoleCode = buildConsoleCode();
