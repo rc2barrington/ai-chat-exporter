@@ -183,7 +183,7 @@ export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLab
       }
       if (!handle) return;
       setDirRemembered(true);
-      const files = await collectFiles(handle, folderAccess.include);
+      const files = await collectFiles(handle, folderAccess.include, folderAccess.enterDir);
       if (files.length === 0) {
         // The browser handed back a handle but the folder yielded nothing —
         // either the picked folder is genuinely empty/was moved, or Chrome

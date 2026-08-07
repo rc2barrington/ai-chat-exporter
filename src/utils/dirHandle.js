@@ -109,7 +109,11 @@ export async function pickDirectory(id, startInHandle) {
 // Recursively walk a directory handle, returning File objects whose
 // `.relativePath` is "<rootName>/<...>/<file>" (mirrors the drag-drop shape).
 // `shouldInclude(name, path)` filters which files are read.
-export async function collectFiles(dirHandle, shouldInclude) {
+// `shouldEnterDir(name, path)` optionally prunes subtrees. Without it a walk
+// rooted at the user's home folder would descend into every project and
+// media directory they own, so sources that let the user pick a broad root
+// pass a predicate that keeps the walk on the paths that can actually match.
+export async function collectFiles(dirHandle, shouldInclude, shouldEnterDir) {
   const out = [];
 
   async function walk(handle, prefix) {
@@ -122,6 +126,7 @@ export async function collectFiles(dirHandle, shouldInclude) {
           out.push(file);
         }
       } else if (entry.kind === "directory") {
+        if (shouldEnterDir && !shouldEnterDir(name, path)) continue;
         await walk(entry, path);
       }
     }
