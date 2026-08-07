@@ -29,11 +29,13 @@ import {
 //   noMatchHelp       optional node rendered when a scan yields zero sessions,
 //                     for sources whose files browsers tend to miss (hidden dirs)
 export function SessionWorkspace({ accept, parseFile, showToolToggles, sourceLabel, folderAccess, noMatchHelp }) {
+  // Defaults favour a complete, ready-to-read transcript: everything the
+  // session contained, untruncated, with no metadata header.
   const [includeThinking, setIncludeThinking] = useState(true);
-  const [includeTools, setIncludeTools] = useState(false);
-  const [includeResults, setIncludeResults] = useState(false);
-  const [frontmatter, setFrontmatter] = useState(true);
-  const [truncateChars, setTruncateChars] = useState(2000);
+  const [includeTools, setIncludeTools] = useState(true);
+  const [includeResults, setIncludeResults] = useState(true);
+  const [frontmatter, setFrontmatter] = useState(false);
+  const [truncateChars, setTruncateChars] = useState(0);
   const [parsedSession, setParsedSession] = useState(null);
   const [availableSessions, setAvailableSessions] = useState([]);
   const [selected, setSelected] = useState(new Set());
