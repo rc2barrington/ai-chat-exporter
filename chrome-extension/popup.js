@@ -14,6 +14,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let detectedTabs = [];
 
+  // The popup is destroyed every time it closes, so a selection kept only in
+  // the DOM is lost on reopen. Persist the chosen tab ids instead: without
+  // this, reopening rebuilt the list from scratch and a single Export click
+  // ran against every detected tab rather than the one that was picked.
+  const SELECTION_KEY = "selectedTabIds";
+
+  async function loadSelection() {
+    try {
+      const stored = await chrome.storage.local.get(SELECTION_KEY);
+      return new Set(stored[SELECTION_KEY] || []);
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  async function saveSelection() {
+    const ids = Array.from(document.querySelectorAll(".tab-select:checked"))
+      .map(cb => parseInt(cb.getAttribute("data-tab-id"), 10))
+      .filter(id => !isNaN(id));
+    try {
+      await chrome.storage.local.set({ [SELECTION_KEY]: ids });
+    } catch (e) {
+      // Storage unavailable: selection just won't survive the next reopen.
+    }
+  }
+
   // Log status message to panel
   function logStatus(message, type = "default", time = null) {
     const line = document.createElement("div");
@@ -110,7 +136,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       selectAllContainer.style.display = "flex";
       detectedCount.textContent = `${detectedTabs.length} tab(s) detected`;
-      exportBtn.disabled = false;
+
+      // Nothing is selected by default. Exporting every open chat is the
+      // expensive, hard-to-undo action, so it has to be chosen explicitly.
+      const savedSelection = await loadSelection();
 
       // Populate list
       detectedTabs.forEach((tab) => {
@@ -135,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         item.innerHTML = `
-          <input type="checkbox" class="tab-checkbox tab-select" data-tab-id="${tab.id}" checked />
+          <input type="checkbox" class="tab-checkbox tab-select" data-tab-id="${tab.id}"${savedSelection.has(tab.id) ? " checked" : ""} />
           <span class="site-badge ${siteClass}">${siteLabel}</span>
           <span class="tab-title" title="${escapeHtml(tab.title || "")}">${escapeHtml(tab.title || "Untitled Chat")}</span>
           ${isCurrent ? '<span class="site-badge current-badge">THIS TAB</span>' : ''}
@@ -149,18 +178,27 @@ document.addEventListener("DOMContentLoaded", () => {
         cb.addEventListener("change", updateExportButtonState);
       });
 
+      // Reflect the restored selection in the button and Select All states.
+      // This persists too, which prunes ids for tabs that are no longer open
+      // so a recycled tab id can never arrive pre-selected.
+      updateExportButtonState();
+
     } catch (err) {
       logStatus(`Error scanning tabs: ${err.message || err}`, "error");
     }
   }
 
   // Update export button state based on selections
-  function updateExportButtonState() {
+  function updateExportButtonState(opts) {
     const selectedCount = document.querySelectorAll(".tab-select:checked").length;
     exportBtn.disabled = selectedCount === 0;
-    
+
     const allCount = document.querySelectorAll(".tab-select").length;
-    selectAllCheckbox.checked = selectedCount === allCount;
+    // With nothing selected, Select All must read unchecked rather than
+    // "all zero are selected".
+    selectAllCheckbox.checked = allCount > 0 && selectedCount === allCount;
+
+    if (!opts || opts.persist !== false) saveSelection();
   }
 
   // Select all / Deselect all
