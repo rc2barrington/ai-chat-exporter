@@ -142,9 +142,14 @@ async function runBatchExport(targetTabIds, options) {
     // Keep service worker alive by opening the offscreen document immediately
     await setupOffscreenDocument('offscreen.html');
 
-    // Save the currently active tab to restore it later
-    const initialActiveTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    const initialActiveTab = initialActiveTabs[0];
+    // Remember what the user was looking at so it can be put back. A service
+    // worker has no "current window", so tabs.query({currentWindow:true})
+    // returns nothing useful here; ask for the last focused window instead.
+    let initialWindowId = null;
+    try {
+      const win = await chrome.windows.getLastFocused();
+      if (win) initialWindowId = win.id;
+    } catch (e) {}
 
     for (let tabId of targetTabIds) {
       if (isCancelled) {
@@ -163,19 +168,60 @@ async function runBatchExport(targetTabIds, options) {
         currentExportTabId = tabId;
         origWindowId = tabObj.windowId;
         origIndex = tabObj.index;
+
+        // Moving the only tab out of a window destroys that window, which
+        // then makes the restore fail and the cleanup close the user's tab.
+        // In that case the tab already has a window to itself, so use it.
+        let sourceTabCount = 0;
         try {
-          const win = await chrome.windows.create({
-            tabId: tabId,
-            focused: false,
-            state: "normal"
-          });
-          exportWindowId = win.id;
-          logProgress(`Opened export window for "${tabTitle}".`, "info");
-        } catch (e) {
-          logProgress(`Could not open export window, exporting in place.`, "info");
-          await chrome.tabs.update(tabId, { active: true });
+          const srcWin = await chrome.windows.get(origWindowId, { populate: true });
+          sourceTabCount = (srcWin && srcWin.tabs) ? srcWin.tabs.length : 0;
+        } catch (e) {}
+
+        if (sourceTabCount === 1) {
+          try {
+            await chrome.windows.update(origWindowId, { focused: true });
+            await chrome.tabs.update(tabId, { active: true });
+            logProgress(`Exporting "${tabTitle}" in its existing window.`, "info");
+          } catch (e) {
+            logProgress(`Could not focus the chat window; exporting in place.`, "info");
+          }
+        } else {
+          try {
+            // focused:true matters with more than one window open. An
+            // unfocused window opens behind the others and Chrome treats a
+            // fully occluded window as hidden, which throttles the renderer
+            // and stops Gemini's lazy-loader firing at all. The originally
+            // focused window is restored once the batch finishes.
+            const win = await chrome.windows.create({
+              tabId: tabId,
+              focused: true,
+              state: "normal"
+            });
+            exportWindowId = win.id;
+            logProgress(`Opened export window for "${tabTitle}".`, "info");
+          } catch (e) {
+            logProgress(`Could not open export window, exporting in place.`, "info");
+            try {
+              await chrome.windows.update(origWindowId, { focused: true });
+              await chrome.tabs.update(tabId, { active: true });
+            } catch (e2) {}
+          }
         }
         await new Promise(r => setTimeout(r, 600));
+
+        // Surface the tab's own view of whether it is visible. If this ever
+        // reports "hidden" the renderer is throttled and a stalled export is
+        // explained rather than mysterious.
+        try {
+          const [vis] = await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: () => document.visibilityState,
+          });
+          if (vis && vis.result && vis.result !== "visible") {
+            logProgress(`Warning: tab reports visibilityState "${vis.result}" — Chrome may throttle it.`, "error");
+          }
+        } catch (e) {}
 
         if (isCancelled) break;
 
@@ -285,25 +331,40 @@ async function runBatchExport(targetTabIds, options) {
         logProgress(`Failed to process tab: ${err.message || err}`, "error");
       } finally {
         currentExportTabId = null;
-        // Move the tab back to its original window and close the temp one.
+        // Move the tab back to its original window, then close the temp one.
+        // The removal is deliberately conditional: if the move failed (the
+        // original window is gone, say) the tab is still inside the export
+        // window, and removing it would close the user's chat tab outright.
         if (exportWindowId) {
+          let movedBack = false;
           try {
             await chrome.tabs.move(tabId, { windowId: origWindowId, index: origIndex });
-          } catch (e) {}
-          try {
-            await chrome.windows.remove(exportWindowId);
-          } catch (e) {}
+            movedBack = true;
+          } catch (e) {
+            logProgress(`Could not return the tab to its original window; leaving it open.`, "info");
+          }
+
+          if (movedBack) {
+            try {
+              const leftover = await chrome.windows.get(exportWindowId, { populate: true });
+              if (!leftover || !leftover.tabs || leftover.tabs.length === 0) {
+                await chrome.windows.remove(exportWindowId);
+              }
+            } catch (e) {
+              // Window already gone.
+            }
+          }
           exportWindowId = null;
         }
       }
     }
 
-    // Restore original active tab
-    if (initialActiveTab && initialActiveTab.id) {
+    // Put the user back on the window they were using.
+    if (initialWindowId !== null) {
       try {
-        await chrome.tabs.update(initialActiveTab.id, { active: true });
+        await chrome.windows.update(initialWindowId, { focused: true });
       } catch (e) {
-        // Ignore if tab was closed
+        // Window was closed while exporting.
       }
     }
 
