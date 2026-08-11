@@ -335,24 +335,47 @@
         scrollEl || document.scrollingElement || document.documentElement;
       const msgCount = () => document.querySelectorAll('user-query, model-response').length;
 
+      // The wait is adaptive rather than a flat timeout. A fixed 15s wait per
+      // round meant an already-complete conversation sat silent for a full
+      // minute (4 rounds x 15s) before the export moved on, which looked
+      // exactly like a hang. While Gemini is rendering a batch its
+      // scrollHeight keeps changing, so treat that as activity and keep
+      // waiting; once the page goes quiet, stop waiting early.
+      //
+      // Quiet windows escalate across consecutive empty rounds. A batch that
+      // is merely slow to come back from the server shows no scrollHeight
+      // activity either, so bailing after one short quiet window would stop
+      // early and drop the oldest messages -- the original Gemini bug. The
+      // escalation keeps ~20s of total patience before concluding the top is
+      // reached, while still reporting progress every few seconds.
+      const QUIET_STEPS_MS = [2500, 4000, 6000, 8000];
+      const MAX_WAIT_MS = 25000; // ceiling for one very large batch
+      const DONE_AFTER_QUIET_ROUNDS = QUIET_STEPS_MS.length;
+
       let prevCount = msgCount();
       let emptyRounds = 0;
+      updateProgress(`Loading history... ${prevCount} messages so far`);
 
-      for (let gStep = 0; gStep < 2000; gStep++) {
+      for (let gStep = 0; gStep < 500 && emptyRounds < DONE_AFTER_QUIET_ROUNDS; gStep++) {
         checkCancelled();
 
         const sc = gScroller();
         sc.scrollTop = 0;
         sc.dispatchEvent(new Event('scroll', { bubbles: true }));
 
-        // Wait for the count to grow. Batch render time scales with DOM
-        // size, so be patient.
-        const waitStart = Date.now();
+        const quietMs = QUIET_STEPS_MS[Math.min(emptyRounds, QUIET_STEPS_MS.length - 1)];
+        const started = Date.now();
+        let lastActivity = Date.now();
+        let lastHeight = sc.scrollHeight;
         let grew = false;
-        while (Date.now() - waitStart < 15000) {
-          await sleep(500);
+
+        while (Date.now() - started < MAX_WAIT_MS) {
+          await sleep(250);
           checkCancelled();
           if (msgCount() > prevCount) { grew = true; break; }
+          const h = gScroller().scrollHeight;
+          if (h !== lastHeight) { lastHeight = h; lastActivity = Date.now(); }
+          if (Date.now() - lastActivity > quietMs) break;
         }
 
         const now = msgCount();
@@ -362,15 +385,14 @@
           updateProgress(`Loading history... ${now} messages`);
         } else {
           emptyRounds++;
-          if (emptyRounds >= 4) {
-            updateProgress(`All history loaded: ${now} messages.`);
-            break;
-          }
+          // Report every round so a slow load never looks like a freeze.
+          updateProgress(`Loading history... ${now} messages (checking for older, ${emptyRounds}/${DONE_AFTER_QUIET_ROUNDS})`);
         }
       }
 
+      updateProgress(`History loaded: ${msgCount()} messages.`);
       gScroller().scrollTop = 0;
-      await sleep(500);
+      await sleep(300);
     } else {
       // ChatGPT: scroll UP to trigger lazy-loaded history.
       let upAttempts = 0;
