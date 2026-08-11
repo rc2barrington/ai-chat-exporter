@@ -142,15 +142,6 @@ async function runBatchExport(targetTabIds, options) {
     // Keep service worker alive by opening the offscreen document immediately
     await setupOffscreenDocument('offscreen.html');
 
-    // Remember what the user was looking at so it can be put back. A service
-    // worker has no "current window", so tabs.query({currentWindow:true})
-    // returns nothing useful here; ask for the last focused window instead.
-    let initialWindowId = null;
-    try {
-      const win = await chrome.windows.getLastFocused();
-      if (win) initialWindowId = win.id;
-    } catch (e) {}
-
     for (let tabId of targetTabIds) {
       if (isCancelled) {
         logProgress("Export cancelled before starting next tab.", "info");
@@ -178,48 +169,79 @@ async function runBatchExport(targetTabIds, options) {
           sourceTabCount = (srcWin && srcWin.tabs) ? srcWin.tabs.length : 0;
         } catch (e) {}
 
+        // The export never takes focus. Making the tab the active one inside
+        // its own window is enough for it to run; stealing the foreground is
+        // not acceptable while the user is working elsewhere.
         if (sourceTabCount === 1) {
           try {
-            await chrome.windows.update(origWindowId, { focused: true });
             await chrome.tabs.update(tabId, { active: true });
             logProgress(`Exporting "${tabTitle}" in its existing window.`, "info");
           } catch (e) {
-            logProgress(`Could not focus the chat window; exporting in place.`, "info");
+            logProgress(`Could not activate the chat tab; exporting in place.`, "info");
           }
         } else {
           try {
-            // focused:true matters with more than one window open. An
-            // unfocused window opens behind the others and Chrome treats a
-            // fully occluded window as hidden, which throttles the renderer
-            // and stops Gemini's lazy-loader firing at all. The originally
-            // focused window is restored once the batch finishes.
             const win = await chrome.windows.create({
               tabId: tabId,
-              focused: true,
+              focused: false,
               state: "normal"
             });
             exportWindowId = win.id;
-            logProgress(`Opened export window for "${tabTitle}".`, "info");
+            logProgress(`Opened export window for "${tabTitle}" (unfocused).`, "info");
           } catch (e) {
             logProgress(`Could not open export window, exporting in place.`, "info");
             try {
-              await chrome.windows.update(origWindowId, { focused: true });
               await chrome.tabs.update(tabId, { active: true });
             } catch (e2) {}
           }
         }
         await new Promise(r => setTimeout(r, 600));
 
-        // Surface the tab's own view of whether it is visible. If this ever
-        // reports "hidden" the renderer is throttled and a stalled export is
-        // explained rather than mysterious.
+        // An unfocused window that ends up fully covered is marked occluded by
+        // Chrome, which reports the page as hidden and lets the renderer
+        // throttle its timers and rAF work. The scrape does not depend on page
+        // timers -- sleep() is driven by __exportWake pulses injected from
+        // here, and the loader is triggered by a synthetic scroll event -- but
+        // page code that gates itself on visibility would still stand down.
+        // Report the page as visible so none of that logic disengages.
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            world: "MAIN",
+            func: () => {
+              if (window.__exportVisibilityPatched) return;
+              window.__exportVisibilityPatched = true;
+              try {
+                Object.defineProperty(document, "visibilityState", {
+                  configurable: true,
+                  get: () => "visible",
+                });
+                Object.defineProperty(document, "hidden", {
+                  configurable: true,
+                  get: () => false,
+                });
+                document.addEventListener(
+                  "visibilitychange",
+                  (e) => { e.stopImmediatePropagation(); },
+                  true
+                );
+              } catch (err) {}
+            },
+          });
+        } catch (e) {}
+
+        // Read the true visibility from the isolated world: property
+        // redefinitions in MAIN are not shared across worlds, so this still
+        // sees what Chrome actually thinks rather than the patched value.
+        // Occluded is expected and handled -- log it as information so a slow
+        // export is explainable, not as a failure.
         try {
           const [vis] = await chrome.scripting.executeScript({
             target: { tabId: tabId },
             func: () => document.visibilityState,
           });
           if (vis && vis.result && vis.result !== "visible") {
-            logProgress(`Warning: tab reports visibilityState "${vis.result}" — Chrome may throttle it.`, "error");
+            logProgress(`Tab is occluded (visibilityState "${vis.result}"); driving it from the background.`, "info");
           }
         } catch (e) {}
 
@@ -359,14 +381,9 @@ async function runBatchExport(targetTabIds, options) {
       }
     }
 
-    // Put the user back on the window they were using.
-    if (initialWindowId !== null) {
-      try {
-        await chrome.windows.update(initialWindowId, { focused: true });
-      } catch (e) {
-        // Window was closed while exporting.
-      }
-    }
+    // Focus is deliberately not touched at the end either. The export never
+    // took it, so "restoring" it would only yank the user out of whatever
+    // window they moved to while the export was running.
 
   } finally {
     // Always close offscreen document when finished to release resources
