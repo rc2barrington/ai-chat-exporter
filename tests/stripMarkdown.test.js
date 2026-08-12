@@ -43,6 +43,18 @@ describe("stripMarkdown", () => {
     expect(stripMarkdown("")).toBe("");
     expect(stripMarkdown(null)).toBe("");
   });
+
+  // Regression: a DOM walker keeps the page's HTML source indentation, which
+  // is invisible in markdown but made the .txt output look ragged and broken.
+  it("removes leading HTML indentation and whitespace-only lines", () => {
+    const fromDom = "Heading Alpha\n\n      REPLY-ONE here.\n\n      \n\n      done.   ";
+    expect(stripMarkdown(fromDom)).toBe("Heading Alpha\n\nREPLY-ONE here.\n\ndone.");
+  });
+
+  it("still preserves indentation inside fenced code", () => {
+    const out = stripMarkdown("Try:\n\n```js\nfunction f() {\n    return 1;\n}\n```");
+    expect(out).toContain("    return 1;");
+  });
 });
 
 describe("buildConsoleCode", () => {
