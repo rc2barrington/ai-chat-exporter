@@ -198,12 +198,24 @@ async function runBatchExport(targetTabIds, options) {
         await new Promise(r => setTimeout(r, 600));
 
         // An unfocused window that ends up fully covered is marked occluded by
-        // Chrome, which reports the page as hidden and lets the renderer
-        // throttle its timers and rAF work. The scrape does not depend on page
-        // timers -- sleep() is driven by __exportWake pulses injected from
-        // here, and the loader is triggered by a synthetic scroll event -- but
-        // page code that gates itself on visibility would still stand down.
-        // Report the page as visible so none of that logic disengages.
+        // Chrome. The page is then reported hidden, its timers are throttled to
+        // roughly once a second, and requestAnimationFrame stops firing
+        // altogether.
+        //
+        // The scrape itself copes: sleep() advances on __exportWake pulses
+        // injected from here, and the loader is triggered by a synthetic scroll
+        // event, both of which work while hidden. What does not cope is the
+        // page's own rendering. Gemini's chat history is an Angular virtual
+        // scroller, so the scroll handler schedules its work through rAF; with
+        // rAF parked, the batch is fetched but never rendered and the message
+        // count never moves. That is the difference between one window (visible,
+        // fine) and several (occluded, stuck).
+        //
+        // So: report the page as visible, and re-drive rAF from the same
+        // unthrottled pulse that drives sleep(). Callbacks are queued and
+        // flushed on each __exportWake -- DOM events cross worlds, so the pulse
+        // dispatched from the isolated world reaches this MAIN-world listener.
+        // The native rAF is still called too, so nothing changes while visible.
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tabId },
@@ -225,6 +237,31 @@ async function runBatchExport(targetTabIds, options) {
                   (e) => { e.stopImmediatePropagation(); },
                   true
                 );
+              } catch (err) {}
+
+              try {
+                const nativeRaf = window.requestAnimationFrame.bind(window);
+                let queue = [];
+                let nextId = 1 << 20; // keep clear of native ids
+                const flush = () => {
+                  if (!queue.length) return;
+                  const batch = queue;
+                  queue = [];
+                  const now = performance.now();
+                  for (const entry of batch) {
+                    try { entry.cb(now); } catch (err) {}
+                  }
+                };
+                window.requestAnimationFrame = function (cb) {
+                  const id = nextId++;
+                  queue.push({ id: id, cb: cb });
+                  try { nativeRaf(flush); } catch (err) {}
+                  return id;
+                };
+                window.cancelAnimationFrame = function (id) {
+                  queue = queue.filter((e) => e.id !== id);
+                };
+                document.addEventListener("__exportWake", flush);
               } catch (err) {}
             },
           });
