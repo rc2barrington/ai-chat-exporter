@@ -39,6 +39,12 @@ function logProgress(message, type = "info") {
 }
 
 // Build the markdown file contents
+// A Date shifted so that JSZip's UTC-based DOS timestamp encoding stores the
+// local wall clock. See the call site for why this is needed.
+function zipLocalDate(d = new Date()) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+}
+
 function buildMarkdown(data) {
   const nl = "\n";
   let md = '---' + nl;
@@ -133,16 +139,24 @@ async function processSessionDownload(data, options) {
   if (data.savedMedia && data.savedMedia.length > 0) {
     logProgress(`Compiling zip package...`, "info");
     const zip = new JSZip();
-    zip.file("conversation.md", markdownContent);
+
+    // JSZip builds each entry's DOS timestamp with UTC getters, but the ZIP
+    // format defines that field as local time, so every extractor reads it
+    // back as local. West of UTC that makes extracted files look like they
+    // were modified hours in the future (5 hours in US Central). Pre-shift
+    // the date so the stored wall clock is the local one.
+    const zipStamp = zipLocalDate();
+
+    zip.file("conversation.md", markdownContent, { date: zipStamp });
 
     const mediaFolder = zip.folder("media");
     data.savedMedia.forEach(media => {
-      mediaFolder.file(media.filename, media.base64, { base64: true });
+      mediaFolder.file(media.filename, media.base64, { base64: true, date: zipStamp });
     });
 
     if (data.failedFetches && data.failedFetches.length > 0) {
       const report = data.failedFetches.map(f => `${f.filename}\t${f.url}\t${f.error}`).join("\n");
-      zip.file("media-fetch-errors.tsv", "filename\turl\terror\n" + report);
+      zip.file("media-fetch-errors.tsv", "filename\turl\terror\n" + report, { date: zipStamp });
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob" });

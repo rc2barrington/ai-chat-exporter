@@ -459,14 +459,19 @@ export function buildConsoleCode(opts = {}) {
     console.log('[Exporter] Saved ' + safeBase + '.txt (' + replies.length + ' replies, plain text)');
   } else if (JSZip && (savedMedia.length > 0 || mediaQueue.length > 0)) {
     var zip = new JSZip();
-    zip.file('conversation.md', md);
+    // JSZip encodes each entry's DOS timestamp from UTC getters, but the ZIP
+    // format defines that field as local time, so extractors read it back as
+    // local and the files look modified hours in the future west of UTC.
+    // Pre-shift so the stored wall clock is the local one.
+    var zipStamp = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    zip.file('conversation.md', md, { date: zipStamp });
     var folder = zip.folder('media');
-    savedMedia.forEach(function(m) { folder.file(m.filename, m.blob); });
+    savedMedia.forEach(function(m) { folder.file(m.filename, m.blob, { date: zipStamp }); });
     if (failedFetches.length) {
       var report = failedFetches.map(function(f) {
         return f.filename + '\\t' + f.url + '\\t' + f.error;
       }).join('\\n');
-      zip.file('media-fetch-errors.tsv', 'filename\\turl\\terror\\n' + report);
+      zip.file('media-fetch-errors.tsv', 'filename\\turl\\terror\\n' + report, { date: zipStamp });
     }
     var zipBlob = await zip.generateAsync({ type: 'blob' });
     triggerDownload(zipBlob, safeBase + '-' + stamp + '.zip');
