@@ -169,9 +169,11 @@ export function SessionPreview({ session, includeThinking, includeTools, include
   );
 }
 
-function roleNameFor() {
+function roleNameFor(source) {
+  if (source === "Codex") return "Codex";
   return "Claude";
 }
-function roleEmojiFor() {
+function roleEmojiFor(source) {
+  if (source === "Codex") return "🧩";
   return "🤖";
 }

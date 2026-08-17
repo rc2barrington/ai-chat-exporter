@@ -2,10 +2,12 @@ import { useState } from "react";
 import "./App.css";
 import { BrowserChatsTab } from "./components/BrowserChatsTab.jsx";
 import { ClaudeCodeTab } from "./components/ClaudeCodeTab.jsx";
+import { CodexTab } from "./components/CodexTab.jsx";
 
 const TABS = [
   { key: "web", label: "🌐 Browser Chats", render: () => <BrowserChatsTab /> },
   { key: "cli", label: "💻 Claude Code", render: () => <ClaudeCodeTab /> },
+  { key: "codex", label: "🧩 Codex", render: () => <CodexTab /> },
 ];
 
 export default function App() {
@@ -23,7 +25,7 @@ export default function App() {
             <span className="title-highlight">Exporter</span>
           </h1>
           <p className="subtitle">
-            Export any web-based AI chat or local Claude Code session as a beautifully formatted Markdown file. 100% private and runs entirely locally.
+            Export any web-based AI chat or local Claude Code or Codex session as a beautifully formatted Markdown file. 100% private and runs entirely locally.
           </p>
         </div>
 
