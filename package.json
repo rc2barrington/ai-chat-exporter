@@ -1,0 +1,41 @@
+{
+  "name": "ai-chat-exporter",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "local": "node server/start.js --open",
+    "build": "vite build",
+    "build:standalone": "vite build --mode standalone",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "package:downloads": "node scripts/package-downloads.js",
+    "predeploy": "node scripts/check-public.js && npm run build && npm run package:downloads",
+    "deploy": "node scripts/check-public.js && gh-pages -d dist -b gh-pages -m \"Deploy site\""
+  },
+  "dependencies": {
+    "dompurify": "^3.4.5",
+    "jszip": "^3.10.1",
+    "marked": "^18.0.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "gh-pages": "^6.3.0",
+    "globals": "^17.4.0",
+    "linkedom": "^0.18.13",
+    "vite": "^8.0.4",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^4.1.7"
+  }
+}

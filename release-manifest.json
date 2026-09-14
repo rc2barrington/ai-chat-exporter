@@ -1,0 +1,314 @@
+{
+  "edition": "public",
+  "version": "1.0.0",
+  "files": [
+    {
+      "name": ".github/workflows/ci.yml",
+      "sha256": "be9f2ad15931852ea81d1c0f95b5823a2d008ca4e46ada19f5bf8b4237386412"
+    },
+    {
+      "name": ".gitignore",
+      "sha256": "0dbac4615cc8ee0b7097f385d64f35aece42ee8a0e74a22f5dab2e7c71c3d458"
+    },
+    {
+      "name": "Open AI Chat Exporter.command",
+      "sha256": "08b526ca30343766a3134a8db7cdbe132e89938a2f8f512a07f360f46f285bfd"
+    },
+    {
+      "name": "README.md",
+      "sha256": "0891fe18c858a11f980c188d01dd0c48019897804fe8a0695dc7a24697754dac"
+    },
+    {
+      "name": "SECURITY.md",
+      "sha256": "e86120d1373bb36099a4e204deb22e79625c129f8f9fdaf0fcff1ee145a74f66"
+    },
+    {
+      "name": "chrome-extension/background.js",
+      "sha256": "d39c9699e4bf15401d4fb270c21a2783fcf512ea311bb00a7bdd4fea5ba4c394"
+    },
+    {
+      "name": "chrome-extension/browserAdapters.js",
+      "sha256": "4a17e31f4c337a0079b7643d7b1b8d40f8c0c6a3e49dd0b41e5531be1668fc5d"
+    },
+    {
+      "name": "chrome-extension/chatgptConversation.js",
+      "sha256": "0a15a0888ec0b28cca3c0136fded87f05e4fa135453aefc8c0634c47d3865e0d"
+    },
+    {
+      "name": "chrome-extension/contentScript.js",
+      "sha256": "bfa9b6ddc4e83bcb76bc780c546a2626f214954d8ff3933df30e91c0219ec943"
+    },
+    {
+      "name": "chrome-extension/exportCore.js",
+      "sha256": "15df3a0ae994a526c55a31c3bd2bc4f2ce6f7567026813a2b5fdc527d8b4d757"
+    },
+    {
+      "name": "chrome-extension/exportSelection.js",
+      "sha256": "85bc0d1528bd5221590838280382a67e3de41a5d8ef63d406900fba07b658d1e"
+    },
+    {
+      "name": "chrome-extension/exportTransport.js",
+      "sha256": "cee622e7b8d9928952c0fa2daf12a6c81799fa6a08bbc23b8695fe4865a83f4c"
+    },
+    {
+      "name": "chrome-extension/icons/icon128.png",
+      "sha256": "a934d7e29405759a3c74ebd4a62adddd210caa4330919f70f6a91585cf1356e2"
+    },
+    {
+      "name": "chrome-extension/icons/icon16.png",
+      "sha256": "3390d04877d3cb87aadf951626cbff43a023171b64f74f80dc278254338c7c36"
+    },
+    {
+      "name": "chrome-extension/icons/icon32.png",
+      "sha256": "5a7acff7655e3511f6665f17cea35ef1bcdd9f8354ed76b19bab57e0a7779096"
+    },
+    {
+      "name": "chrome-extension/icons/icon48.png",
+      "sha256": "d2f3412e1a42ae0a39c04d6f7db955c505ca0a3a7055d4e1910a6180e9be6d1d"
+    },
+    {
+      "name": "chrome-extension/lib/jszip.min.js",
+      "sha256": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e"
+    },
+    {
+      "name": "chrome-extension/manifest.json",
+      "sha256": "d609632014c44d8dc35e66ed0db113f0982eca0c4f39cc71f24f83108f316739"
+    },
+    {
+      "name": "chrome-extension/offscreen.html",
+      "sha256": "fc52abb1db19c25fbb1d9d61ea55df5b5a79ada6ec2abd029523da5ccfa2cece"
+    },
+    {
+      "name": "chrome-extension/offscreen.js",
+      "sha256": "37899591208e62c4725541f63bfbde969d0803a38ba5c89ff13d0546e76a8b3e"
+    },
+    {
+      "name": "chrome-extension/popup.html",
+      "sha256": "a1341eeef2208fa73533aa89e2113572fa79653f6be4a1d038ec9fa5b635c775"
+    },
+    {
+      "name": "chrome-extension/popup.js",
+      "sha256": "cb5852e281f025df56396c08dc717f5d61f136fee8c9f8d919f7313773b6359f"
+    },
+    {
+      "name": "eslint.config.js",
+      "sha256": "ef492c8ad716592191e7b0919c4047f4029d8e5962581f29bc7aff21f9ece010"
+    },
+    {
+      "name": "favicon.svg",
+      "sha256": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66"
+    },
+    {
+      "name": "icons.svg",
+      "sha256": "b45fa506195cfcdef406ba9f0c77b36ddc1a7c224040926ec70abc2fdea7b93a"
+    },
+    {
+      "name": "index.html",
+      "sha256": "ddeea10a269e60f9b94c9907d4a12d816dab86113e529c27abac75961aa5da9f"
+    },
+    {
+      "name": "package-lock.json",
+      "sha256": "1003f9cfba7a11fa6c55920a8bf4c8f16f2984c07e3940fe09a84eb9f32e6a51"
+    },
+    {
+      "name": "package.json",
+      "sha256": "2d50c845b1395be44b23f9906b2d9808a2e92cc4b5a2ae6f09dcce09b5d033c9"
+    },
+    {
+      "name": "public/favicon.svg",
+      "sha256": "61bc9a161de58248288e6905425d7180f0624c2865007b97d763fdac12043a66"
+    },
+    {
+      "name": "public/icons.svg",
+      "sha256": "b45fa506195cfcdef406ba9f0c77b36ddc1a7c224040926ec70abc2fdea7b93a"
+    },
+    {
+      "name": "scripts/check-public.js",
+      "sha256": "045194bd328717e33d9bf68054cf89065babc3e1c19193db17f72d52c58f9d64"
+    },
+    {
+      "name": "scripts/package-downloads.js",
+      "sha256": "7582b58301cc4c9ac07be5d5a2121e6ce608c707656d751c1379ecfca9304069"
+    },
+    {
+      "name": "scripts/public-snapshot.js",
+      "sha256": "63615ef21b60421a7569b59810a7961d717f69342188227ac6b24490890638d3"
+    },
+    {
+      "name": "scripts/verify-distribution.js",
+      "sha256": "44ff35322fa6591991efe29c63187b7f8971310bded9e345d9829577ac700b2a"
+    },
+    {
+      "name": "server/claudeSessions.js",
+      "sha256": "837f060e8dff52f861ecc0dc2a4767e7799538aa1196c1ff858b5e829a1141a0"
+    },
+    {
+      "name": "server/localSessions.js",
+      "sha256": "079b20b825431a33bde26b40955139a20e13591a2aa0f71725636769d11ed759"
+    },
+    {
+      "name": "server/start.js",
+      "sha256": "5ed4ca32b573ffa77bce89d79b3db93fd9eb28fe7fe508f7b675ef9135045733"
+    },
+    {
+      "name": "src/App.css",
+      "sha256": "d823fd24a7cac3edb9b66520afc9fba8846c199aaac21977099487d084f99bb2"
+    },
+    {
+      "name": "src/App.jsx",
+      "sha256": "1d1e698fc67b5bff6db97a7ab205b72e83b1893cbf7a27a25efccfa47ca39ce5"
+    },
+    {
+      "name": "src/components/BatchReview.jsx",
+      "sha256": "3bdb558dffbd6a0f788c5a72996c62b9abb5a8f40e273d2e3531686164a2f1dc"
+    },
+    {
+      "name": "src/components/BrowserSetup.jsx",
+      "sha256": "bf52adf5ad0ac2043ba09703df3ef783c70ec404452187801101dd99bcd53966"
+    },
+    {
+      "name": "src/components/ExportWorkspace.jsx",
+      "sha256": "56bdf67b2206188542f1272a57c3c986094096a687346c8b04be4310209d263a"
+    },
+    {
+      "name": "src/edition.js",
+      "sha256": "721ae666ba3833c34d95d65348c92e4f1ac27c98705f8cc89494db686cf60108"
+    },
+    {
+      "name": "src/generators/html.js",
+      "sha256": "a93c9d7c4d8752caa8f4a6d37fb36e2ec395ce1647fe558b78620525f1856570"
+    },
+    {
+      "name": "src/generators/markdown.js",
+      "sha256": "37e64cb7e146c813cfdb5eaa41e2e7b39040b341bb869da97fd81e8a14d74fb2"
+    },
+    {
+      "name": "src/index.css",
+      "sha256": "8afea3d9f2a5e0a2e8c1cc1958c971c7d11c0b323a9fc10963c07988aeda5f4b"
+    },
+    {
+      "name": "src/main.jsx",
+      "sha256": "4b4b864dbe45253425d0c925337180ec07e204295179f80f59551216f466f618"
+    },
+    {
+      "name": "src/parsers/attachments.js",
+      "sha256": "d87ed08663b142b65514a0d9ece50e447d356aaaafaf7b2179e9a9177bb03539"
+    },
+    {
+      "name": "src/parsers/browserScript.js",
+      "sha256": "517b92820236c7a29a299afeba991c1d386ad14386dae3020881e320dfd9d999"
+    },
+    {
+      "name": "src/parsers/claudeJsonl.js",
+      "sha256": "67399a62511b089a03fe0c7a300d2817b979e674bd5d05cbcaa4c1ce9c96e928"
+    },
+    {
+      "name": "src/parsers/codexJsonl.js",
+      "sha256": "8a3246795f8cb0db0c67f64fda2c1eb7f5c9883e99417e39754fe342ff7a2201"
+    },
+    {
+      "name": "src/parsers/codexMetadata.js",
+      "sha256": "214e17b7b24187ae131cb72177e70dcf029aafbbee100c3b457e6d6e4add5bcd"
+    },
+    {
+      "name": "src/parsers/opencode.js",
+      "sha256": "5f1de1092ae977e41ad2e719373a13befeda4841120b51ac203ae2bf7ce40768"
+    },
+    {
+      "name": "src/utils/download.js",
+      "sha256": "91bd77a6411c8bea1d7404c1a2b04127bb8eebb86872202a88888cb9cf7601ee"
+    },
+    {
+      "name": "src/utils/files.js",
+      "sha256": "511026ef4606ddc83fce4f69be10b8f94e7e94f0982ffd99ca6852bfb0d60cbe"
+    },
+    {
+      "name": "src/utils/markdownRender.js",
+      "sha256": "337bbf81a070f9cfa1d78bddc06cc8379ab8bdb2a5c7fc4225c942d7705fa229"
+    },
+    {
+      "name": "src/utils/sessionExport.js",
+      "sha256": "75f54827a0f8d932300ae535f857b893ea496636d8be3b5df140a17f579bb17e"
+    },
+    {
+      "name": "src/utils/stripMarkdown.js",
+      "sha256": "1c60f577cffc684be6a370683f7544dab68d17da6d3a8c843014de8c3134ff52"
+    },
+    {
+      "name": "src/utils/zip.js",
+      "sha256": "4deec382c4f7752a8f95f022cc8e347742103a11e1b3a5eb506be57627d64b09"
+    },
+    {
+      "name": "tests/browserAdapters.test.js",
+      "sha256": "c099b36fbf1874dcb09bd0cd4d0dfbd97316db81f18bf0a6cf7c105c80b0117f"
+    },
+    {
+      "name": "tests/chatgptConversation.test.js",
+      "sha256": "943feceaa7c960cc3b984647b3d2d4ebbf8d8eac7f2afe671f1947995d9a58b1"
+    },
+    {
+      "name": "tests/claudeJsonl.test.js",
+      "sha256": "ee02894e5e81e0e78ba1ce73d338b5cb5f913a088a3ea71bf55c6deedf179eac"
+    },
+    {
+      "name": "tests/codexJsonl.test.js",
+      "sha256": "de033559df4ad70bab9f49e2c086dbec9db378bc302075dde319e16fc989cf6c"
+    },
+    {
+      "name": "tests/editions.test.js",
+      "sha256": "73b119be58add773558c622a5b221824d5181002ea6d23d885fbe050fe48b4a9"
+    },
+    {
+      "name": "tests/exportReliability.test.js",
+      "sha256": "3334f7d004fc1b32d5441f1a94a5aaa71d05d67347e99a3a568580f53f07618b"
+    },
+    {
+      "name": "tests/exportSelection.test.js",
+      "sha256": "90d46522f34aa68d03f8520a9f95fc1815d634389e10882a937ce2cf4452edb5"
+    },
+    {
+      "name": "tests/extensionMediaSupport.test.js",
+      "sha256": "5df926d8fa171d44ec65899f5cc2d16e9fd4b58befa7b39d765f92e2d2bec1ba"
+    },
+    {
+      "name": "tests/extensionWindowing.test.js",
+      "sha256": "f6fdca3925ad5b597430a6360b92f7f3cc65e0b63edc98f17985c920ddc1f4f7"
+    },
+    {
+      "name": "tests/html.test.js",
+      "sha256": "7b57309022ab8318a95b198fab179950aee6a280264a0ea08dc4e95400d902ba"
+    },
+    {
+      "name": "tests/localSessions.test.js",
+      "sha256": "44b72a47eda4f3a7be4751cdf758a63980293429d9e8747127d07f9364cfcf27"
+    },
+    {
+      "name": "tests/localWorkflow.test.js",
+      "sha256": "3046b8306966af430ace31134f01bd000358628b616617de55799fa0a9f82498"
+    },
+    {
+      "name": "tests/markdown.test.js",
+      "sha256": "c7c342b8eb1a4f5862e1bc879e670565bac491eb29a56926634dfe9cb09eff6b"
+    },
+    {
+      "name": "tests/offscreenPackaging.test.js",
+      "sha256": "494438f64b4aeb890c1e0fa157ee3cf4b1d5da328538bb59d1b667ab512fb26d"
+    },
+    {
+      "name": "tests/opencode.test.js",
+      "sha256": "cac5246ba6a7f6f1cd07c4574100213dcca09acd437de73d4212a6de23acb0ca"
+    },
+    {
+      "name": "tests/stripMarkdown.test.js",
+      "sha256": "77b5460a28750f3e5a2e1934ab847dfbf29fd9dc28f370da302a92fa821800b9"
+    },
+    {
+      "name": "tests/zip.test.js",
+      "sha256": "7f1268328168ec313edcc7f34806808da434f09a53fae9e0d7a50d0825a5dda9"
+    },
+    {
+      "name": "vite.config.js",
+      "sha256": "7bda9b6f91929461135682eb656ef4ac76b5d753973dab1b80786d1ec0dab1f4"
+    }
+  ]
+}
