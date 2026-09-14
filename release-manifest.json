@@ -4,7 +4,7 @@
   "files": [
     {
       "name": ".github/workflows/ci.yml",
-      "sha256": "be9f2ad15931852ea81d1c0f95b5823a2d008ca4e46ada19f5bf8b4237386412"
+      "sha256": "1f6fc7c6b601aad440176cd5976fe0768ebce40f67e429aa5841333e2bb9a007"
     },
     {
       "name": ".gitignore",
