@@ -11,6 +11,36 @@ const source = readFileSync(
 );
 
 describe("offscreen packaging", () => {
+  it('excludes user messages and their files from replies-only archives', async () => {
+    let onMessage, blob;
+    const context = {
+      AbortController, Blob, console, fetch, JSZip, setTimeout, clearTimeout,
+      AIChatExporterCore: globalThis.AIChatExporterCore,
+      AIChatExporterTransport: globalThis.AIChatExporterTransport,
+      setInterval: () => 1,
+      URL: { createObjectURL(value) { blob = value; return 'blob:test/replies'; } },
+      chrome: { runtime: {
+        connect: () => ({ onDisconnect: { addListener() {} } }),
+        onMessage: { addListener(fn) { onMessage = fn; } },
+        sendMessage(_request, callback) { callback?.(); },
+      } },
+    };
+    vm.runInNewContext(source, context);
+    const response = await new Promise(resolve => onMessage({ action: 'zipAndDownload', options: { repliesOnly: true, includeMedia: true }, data: {
+      title: 'Replies', siteName: 'Perplexity', messageCount: 2,
+      messages: [{ role: '## You', text: 'USER SECRET ![upload](media/user.png)' }, { role: '## Perplexity', text: 'ANSWER ![output](media/answer.png)' }],
+      savedMedia: ['user.png', 'answer.png'].map(filename => ({ filename, type: 'image/png', base64: 'YWJj' })),
+      remoteQueue: [], failedFetches: [], appendix: 'USER APPENDIX',
+    } }, {}, resolve));
+    expect(response.status).toBe('success');
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    expect(Object.keys(zip.files).sort()).toEqual(['media/', 'media/answer.png', 'replies.md']);
+    const md = await zip.file('replies.md').async('string');
+    expect(md).toContain('ANSWER');
+    expect(md).not.toContain('USER');
+    expect(md).toContain('message_count: 1');
+    expect(md).toContain('export_scope: ai-replies-only');
+  });
   it("packages chunked transfers with exact deduplication and authoritative history status", async () => {
     let onMessage, blob;
     const context = {
@@ -60,6 +90,7 @@ describe("offscreen packaging", () => {
     const response = await new Promise(resolve => onMessage({ action: "zipAndDownload", options: { includeMedia: true }, data: {
       title: "Mixed media", siteName: "Google AI Mode", date: new Date().toISOString(), messageCount: 1,
       messages: [{ role: "## You", text: "![Saved](media/saved.txt) ![Missing](media/missing.png)" }],
+      appendix: "## Conversation files\n\n- [Saved](media/saved.txt)\n- [Missing](media/missing.png)\n",
       savedMedia: [{ filename: "saved.txt", base64: "aGVsbG8=" }], remoteQueue: [],
       failedFetches: [{ filename: "missing.png", url: "https://example.test/missing.png", error: "HTTP 404" }],
     } }, {}, resolve));
@@ -68,7 +99,10 @@ describe("offscreen packaging", () => {
     const zip = await JSZip.loadAsync(await createdBlob.arrayBuffer());
     expect(Object.keys(zip.files).sort()).toEqual(["media/", "media/saved.txt", "mixed-media.md"]);
     expect(await zip.file("media/saved.txt").async("string")).toBe("hello");
-    expect(await zip.file("mixed-media.md").async("string")).toContain("https://example.test/missing.png");
+    const markdown = await zip.file("mixed-media.md").async("string");
+    expect(markdown).toContain("## Conversation files");
+    expect(markdown).toContain("- [Saved](media/saved.txt)");
+    expect(markdown).toContain("- [Missing] [fetch failed](https://example.test/missing.png)");
   });
 
   it.each([false, true])("returns Markdown when no media was saved (failed attachments: %s)", async (failures) => {

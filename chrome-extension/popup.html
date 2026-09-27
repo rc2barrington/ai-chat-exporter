@@ -394,6 +394,16 @@
       <div class="card-panel options-container">
         <div class="option-row">
           <div class="option-info">
+            <span class="option-label">AI replies only</span>
+            <span class="option-desc">Exclude your messages and their attachments</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-replies-only" aria-label="AI replies only" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="option-row">
+          <div class="option-info">
             <span class="option-label">Include Thinking</span>
             <span class="option-desc">Export Claude &amp; Grok thinking blocks</span>
           </div>
@@ -440,6 +450,7 @@
     <script src="lib/jszip.min.js"></script>
     <script src="exportSelection.js"></script>
     <!-- Extension Logic -->
+    <script src="privateBrowserAdapters.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

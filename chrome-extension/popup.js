@@ -11,6 +11,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const toggleThinking = document.getElementById("toggle-thinking");
   const toggleTools = document.getElementById("toggle-tools");
   const toggleMedia = document.getElementById("toggle-media");
+  const toggleRepliesOnly = document.getElementById("toggle-replies-only");
+  chrome.storage.local.get("repliesOnly", settings => { toggleRepliesOnly.checked = settings.repliesOnly === true; });
+  toggleRepliesOnly.addEventListener("change", () => chrome.storage.local.set({ repliesOnly: toggleRepliesOnly.checked }));
 
   let detectedTabs = [];
   const selection = globalThis.AIChatExporterSelection.createSelectionState([]);
@@ -87,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
       detectedTabs = tabs.filter(tab => {
         try {
           const url = new URL(tabUrl(tab));
-          return /(^|\.)(chatgpt\.com|chat\.openai\.com|claude\.ai|claude\.com|gemini\.google\.com|grok\.com)$/.test(url.hostname) ||
+          return !!globalThis.AIChatExporterPrivateAdapters?.siteName(url.href) || /(^|\.)(chatgpt\.com|chat\.openai\.com|claude\.ai|claude\.com|gemini\.google\.com|grok\.com)$/.test(url.hostname) ||
             (/^(www\.)?google\.com$/.test(url.hostname) && /^\/(search|aimode)\/?$/.test(url.pathname));
         } catch { return false; }
       });
@@ -148,7 +151,10 @@ document.addEventListener("DOMContentLoaded", () => {
         let siteClass = "site-chatgpt";
         let siteLabel = "ChatGPT";
         const url = (tab.url || tab.pendingUrl || "").toLowerCase();
-        if (url.includes("claude.ai") || url.includes("claude.com")) {
+        if (globalThis.AIChatExporterPrivateAdapters?.siteName(url)) {
+          siteLabel = globalThis.AIChatExporterPrivateAdapters.siteName(url);
+          siteClass = "site-gemini";
+        } else if (url.includes("claude.ai") || url.includes("claude.com")) {
           siteClass = "site-claude";
           siteLabel = "Claude";
         } else if (url.includes("gemini.google.com")) {
@@ -271,6 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tabDetails: targets,
       confirmation: { steps: 2, targetIds: targetTabIds },
       options: {
+        repliesOnly: toggleRepliesOnly.checked,
         includeThinking: toggleThinking.checked,
         includeTools: toggleTools.checked,
         includeMedia: toggleMedia.checked

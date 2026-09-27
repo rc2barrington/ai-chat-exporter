@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { VERSION } from "../src/edition.js";
 
 const readExtension = (name) => readFileSync(
   new URL(`../chrome-extension/${name}`, import.meta.url),
@@ -119,7 +120,7 @@ describe("extension media completeness", () => {
   });
 
   it("grants fetch access only to the providers and their known media CDNs", () => {
-    expect(manifest.version).toBe("1.0.0");
+    expect(manifest.version).toBe(VERSION);
     expect(manifest.host_permissions).toEqual(expect.arrayContaining([
       "https://www.google.com/*",
       "*://*.oaiusercontent.com/*",

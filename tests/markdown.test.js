@@ -22,6 +22,13 @@ const session = {
 };
 
 describe("generateMarkdown", () => {
+  it('exports only AI replies when selected and keeps full conversations by default', () => {
+    const md = generateMarkdown(session, { repliesOnly: true, frontmatter: true });
+    expect(md).not.toContain('## You');
+    expect(md).toContain('hello');
+    expect(md).toContain('message_count: 1');
+    expect(generateMarkdown(session)).toContain('## You');
+  });
   it("hides thinking when includeThinking is false", () => {
     const md = generateMarkdown(session, { includeThinking: false, includeTools: false });
     expect(md).not.toContain("internal");

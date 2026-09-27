@@ -2,12 +2,15 @@ import { useState } from "react";
 import { buildConsoleCode } from "../parsers/browserScript.js";
 import { copyToClipboard } from "../utils/download.js";
 import { VERSION } from "../edition.js";
+import "../../chrome-extension/privateBrowserAdapters.js";
 
 export function BrowserSetup() {
   const [copied, setCopied] = useState(false);
+  const [repliesOnlyText, setRepliesOnlyText] = useState(false);
   return <>
     <section className="panel browser-intro"><span className="eyebrow">2 · Connect your browser</span><h2>Export directly from your open chats</h2><p>The Chrome extension finds your open conversations. Choose the chats you want, include attachments, and save them as readable Markdown.</p>
-      <div className="provider-pills">{["ChatGPT", "Claude.ai", "Gemini", "Grok", "Google AI Mode", "AI Overviews"].map(p => <span key={p}>{p}</span>)}</div>
+      <div className="provider-pills">{["ChatGPT", "Claude.ai", "Gemini", "Grok", "Google AI Mode", "AI Overviews", ...globalThis.AIChatExporterPrivateAdapters.names].map(p => <span key={p}>{p}</span>)}</div>
+      {globalThis.AIChatExporterPrivateAdapters.names.includes("Perplexity") && <p className="fine-print">Muse and Perplexity export conversation text plus uploaded or displayed images. Other file attachments and Perplexity's bulk source list are skipped. After installing or updating the extension, refresh your Perplexity chat once to enable background rendering.</p>}
       <a className="button" href={`${import.meta.env.BASE_URL}downloads/ai-chat-exporter-extension.zip`} download>Download Chrome extension ↓</a>
       <span className="release-note">v{VERSION} · No account or subscription</span>
     </section>
@@ -16,7 +19,7 @@ export function BrowserSetup() {
       <li><span>2</span><div><h3>Add it to Chrome</h3><p>Open <code>chrome://extensions</code>, turn on Developer mode, choose <strong>Load unpacked</strong>, and select the unzipped extension folder.</p></div></li>
       <li><span>3</span><div><h3>Choose chats, then export</h3><p>Click the extension icon. Everything starts unselected. Exports keep running while you use other tabs; batches require two confirmations.</p></div></li>
     </ol><p className="fine-print">Updating? Replace the contents of your existing extension folder and click Reload in Chrome.</p></section>
-    <details className="panel advanced"><summary>Use a console script instead <span>Optional fallback</span></summary><p>Open a supported chat, open the browser developer console, then paste the script. Some sites block attachment downloads from console scripts.</p><button className="button secondary" onClick={async () => setCopied(await copyToClipboard(buildConsoleCode()))}>{copied ? "Copied" : "Copy export script"}</button></details>
+    <details className="panel advanced"><summary>Use a console script instead <span>Optional fallback</span></summary><p>Open a supported chat, open the browser developer console, then paste the script. Some sites block attachment downloads from console scripts.</p><p><label><input type="checkbox" checked={repliesOnlyText} onChange={e => { setRepliesOnlyText(e.target.checked); setCopied(false); }} /> AI replies only (plain text .txt)</label></p><button className="button secondary" onClick={async () => setCopied(await copyToClipboard(buildConsoleCode({ repliesOnlyText })))}>{copied ? "Copied" : "Copy export script"}</button></details>
     <div className="output-note"><span>↓</span><p><strong>One conversation, one export.</strong> Text-only chats save as .md. Chats with downloaded attachments save as a ZIP. Exact duplicate images share one file, while every message stays in place.</p></div>
   </>;
 }

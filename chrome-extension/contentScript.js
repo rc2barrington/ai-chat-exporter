@@ -150,6 +150,47 @@
 
     try {
 
+    if (globalThis.AIChatExporterPrivateAdapters?.siteName(location.href)) {
+      const privateProvider = globalThis.AIChatExporterPrivateAdapters.siteName(location.href);
+      updateProgress(`Reading ${privateProvider} messages and images...`);
+      const data = await globalThis.AIChatExporterPrivateAdapters.exportConversation(document, location.href, {
+        includeMedia: options.includeMedia, signal: abortController.signal, onProgress: updateProgress,
+        requireBackgroundRendering: true,
+      });
+      // Fetch in the owning page first: blob URLs and signed-in same-origin
+      // attachments cannot be resolved by an unauthenticated offscreen fetch.
+      const unresolved = [];
+      for (const item of data.remoteQueue) {
+        if (abortController.signal.aborted) throw Object.assign(new Error('Export cancelled.'), { name: 'AbortError' });
+        try {
+          const target = new URL(item.url, location.href);
+          const response = await fetch(target.href, { credentials: target.origin === location.origin ? 'include' : 'omit', signal: abortController.signal });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const blob = await response.blob();
+          if (!blob.size || /^text\/html/i.test(blob.type) || (item.kind === 'image' && /^text\//i.test(blob.type))) throw new Error('Attachment URL did not return the expected file.');
+          const base64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            const cleanup = () => abortController.signal.removeEventListener('abort', onAbort);
+            const onAbort = () => {
+              try { reader.abort(); } catch { /* The reader may have finished. */ }
+              cleanup();
+              reject(Object.assign(new Error('Export cancelled.'), { name: 'AbortError' }));
+            };
+            reader.onload = () => { cleanup(); resolve(String(reader.result).split(',')[1]); };
+            reader.onerror = () => { cleanup(); reject(reader.error || new Error('FileReader failed.')); };
+            abortController.signal.addEventListener('abort', onAbort, { once: true });
+            if (abortController.signal.aborted) onAbort();
+            else reader.readAsDataURL(blob);
+          });
+          data.savedMedia.push({ filename: item.filename, base64, type: blob.type });
+        } catch (error) {
+          if (abortController.signal.aborted) throw error;
+          unresolved.push(item);
+        }
+      }
+      data.remoteQueue = unresolved;
+      return { ...data, exporterVersion: chrome.runtime.getManifest().version };
+    }
     if (globalThis.AIChatExporterBrowserAdapters?.isGoogleSearch(location.href)) {
       updateProgress("Reading Google AI answers and citations without activating the tab...");
       const data = await globalThis.AIChatExporterBrowserAdapters.exportGoogle(document, location.href, {

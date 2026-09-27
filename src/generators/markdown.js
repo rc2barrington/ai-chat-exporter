@@ -16,7 +16,9 @@ export function generateMarkdown(session, opts = {}) {
     includeResults = false,
     truncateChars = 0,
     frontmatter = false,
+    repliesOnly = false,
   } = opts;
+  const messages = repliesOnly ? session.messages.filter(msg => msg.role !== '## You') : session.messages;
 
   let md = "";
 
@@ -26,7 +28,8 @@ export function generateMarkdown(session, opts = {}) {
     md += `source: ${yamlString(session.source || "Unknown")}` + NL;
     if (session.startedAt) md += `started_at: ${session.startedAt}` + NL;
     if (session.endedAt) md += `ended_at: ${session.endedAt}` + NL;
-    md += `message_count: ${session.messages.length}` + NL;
+    md += `message_count: ${messages.length}` + NL;
+    if (repliesOnly) md += `export_scope: ai-replies-only${NL}`;
     md += "---" + NL + NL;
   }
 
@@ -41,7 +44,7 @@ export function generateMarkdown(session, opts = {}) {
   md += `---${NL}${NL}`;
 
   const rendered = [];
-  for (const msg of session.messages) {
+  for (const msg of messages) {
     let body = "";
     if (msg.role === "## You") {
       body = msg.blocks.map((b) => b.text || "").join(NL).trim();

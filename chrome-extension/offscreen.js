@@ -93,6 +93,7 @@ async function buildMarkdown(data, signal) {
   if (data.exporterVersion) md += 'exporter_version: ' + JSON.stringify(data.exporterVersion) + nl;
   md += 'exported_at: ' + data.date + nl;
   md += 'message_count: ' + data.messageCount + nl;
+  if (data.exportScope) md += 'export_scope: ' + data.exportScope + nl;
   md += 'media_count: ' + data.savedMedia.length + nl;
   if (data.failedFetches && data.failedFetches.length) {
     md += 'media_failed: ' + data.failedFetches.length + nl;
@@ -112,6 +113,7 @@ async function buildMarkdown(data, signal) {
       await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
+  if (data.appendix) md += '---' + nl + nl + data.appendix.trim() + nl;
 
   return md;
 }
@@ -182,6 +184,18 @@ async function processSessionDownload(data, options, signal) {
   options = options || {};
   throwIfPackagingCancelled(signal);
   logProgress(`Scraped ${data.messageCount} messages. Resolving remote media...`, "info");
+  if (options.repliesOnly) {
+    data.messages = data.messages.filter(message => !/^(?:##\s*)?(?:you|user|human|system|tool)(?:\s|$)/i.test(message.role || ''));
+    data.messageCount = data.messages.length;
+    data.appendix = '';
+    const text = data.messages.map(message => message.text).join('\n');
+    const referenced = item => text.split('media/' + item.filename).slice(1).some(rest => !rest || /^[)\s`"<>]/.test(rest));
+    data.savedMedia = (data.savedMedia || []).filter(referenced);
+    data.remoteQueue = (data.remoteQueue || []).filter(referenced);
+    data.failedFetches = (data.failedFetches || []).filter(referenced);
+    data.exportScope = 'ai-replies-only';
+    logProgress(`Exporting ${data.messageCount} AI replies. Your messages are excluded.`, 'info');
+  }
 
   // Fetch remote attachments in offscreen context to bypass CORS
   if (options.includeMedia && data.remoteQueue && data.remoteQueue.length > 0) {
@@ -214,7 +228,7 @@ async function processSessionDownload(data, options, signal) {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             blob = await res.blob();
             if (!blob.size) throw new Error("Empty attachment response");
-            if (item.kind === "image" && /^text\//i.test(blob.type)) throw new Error("Image URL returned a text page");
+            if (/^text\/html/i.test(blob.type) || (item.kind === "image" && /^text\//i.test(blob.type))) throw new Error("Attachment URL returned a web page instead of a file");
             break;
           } catch (error) {
             blob = null;
@@ -278,9 +292,10 @@ async function processSessionDownload(data, options, signal) {
 
   // Rewrite media references for failed fetches (local + remote) in markdown
   const failedFilenames = new Set(data.failedFetches.map(f => f.filename));
-  for (let messageIndex = 0; messageIndex < data.messages.length; messageIndex++) {
+  const references = data.appendix ? [...data.messages, { text: data.appendix }] : data.messages;
+  for (let messageIndex = 0; messageIndex < references.length; messageIndex++) {
     throwIfPackagingCancelled(signal);
-    const m = data.messages[messageIndex];
+    const m = references[messageIndex];
     if (!failedFilenames.size) break;
     data.failedFetches.forEach(f => {
       const needle = 'media/' + f.filename;
@@ -293,10 +308,11 @@ async function processSessionDownload(data, options, signal) {
   }
 
   if (globalThis.AIChatExporterCore) {
-    const deduped = await globalThis.AIChatExporterCore.deduplicateImages(data.savedMedia, data.messages, () => throwIfPackagingCancelled(signal));
+    const deduped = await globalThis.AIChatExporterCore.deduplicateImages(data.savedMedia, references, () => throwIfPackagingCancelled(signal));
     data.savedMedia = deduped.savedMedia;
     if (deduped.duplicates) logProgress(`Kept one copy of ${deduped.duplicates} exact duplicate image(s). All conversation references are preserved.`, "info");
   }
+  if (data.appendix) data.appendix = references[references.length - 1].text;
   const markdownContent = await buildMarkdown(data, signal);
   throwIfPackagingCancelled(signal);
   const safeTitle = data.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 60) || "chat-export";

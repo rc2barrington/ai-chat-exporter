@@ -1532,7 +1532,7 @@ async function runBatchExport(targetTabs, options, runId, signal) {
         logProgress(`Injecting scraper script...`, "info");
         await chrome.scripting.executeScript({
           target: { tabId: tabId },
-          files: ["chatgptConversation.js", "browserAdapters.js", "exportTransport.js", "contentScript.js"]
+          files: ["chatgptConversation.js", "browserAdapters.js", "privateBrowserAdapters.js", "exportTransport.js", "contentScript.js"]
         });
 
         throwIfExportCancelled(signal);

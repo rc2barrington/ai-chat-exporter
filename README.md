@@ -8,7 +8,7 @@ This checkout is the **public edition**, with Codex and Claude Code. It runs on 
 
 **[Open the website](https://rc2barrington.github.io/ai-chat-exporter/)**
 
-The separate public v1.0 edition provides Codex and Claude Code at port 4179. Both editions include ChatGPT web, Grok web, Gemini web, Claude web, Google AI Overviews, and Google AI Mode. Muse integration is not included in this release.
+The public edition provides Codex and Claude Code at port 4179. Both editions include ChatGPT web, Grok web, Gemini web, Claude web, Google AI Overviews, Google AI Mode, Muse, and Perplexity browser exports.
 
 Edition selection is defined in `src/edition.js` and enforced in both the interface and local API. The source is shared; disabled providers cannot be discovered or exported through that edition's API. The public repository starts with new Git history and contains no private repository history.
 
@@ -20,7 +20,9 @@ Edition selection is defined in `src/edition.js` and enforced in both the interf
 2. Open `chrome://extensions`, enable Developer mode, and use **Load unpacked** to select the extracted extension folder.
 3. Open the extension, select chats, choose whether to include attachments, and export.
 
-Supported sources: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews and Google Search AI Mode on google.com. Exports run in existing tabs without moving or activating them. Updating an unpacked extension requires replacing its files and clicking Reload in Chrome.
+Supported sources: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews and Google Search AI Mode on google.com, Muse, and Perplexity. Exports run in existing tabs without moving or activating them. Updating an unpacked extension requires replacing its files and clicking Reload in Chrome. New host permissions may require Chrome approval.
+
+Enable **AI replies only** in the extension's Export Settings, or in Export options for local sessions, to exclude your messages and their attachments. The console fallback also offers replies-only plain text output. Refresh a Perplexity chat once after updating the extension to enable its background rendering helper.
 
 ### Local coding chats
 
@@ -49,7 +51,7 @@ The local app opens directly to Codex and automatically lists saved chats. Choos
 
 ChatGPT text is reconstructed from the authoritative active root-to-current chain, including paginated history. If that chain cannot be established, no partial ChatGPT export is presented as complete. Markdown uses `history_status: complete` for a verified chain. An optional rendered-media recovery sweep no longer produces a misleading `root history reached: false` field in the document.
 
-Other browser providers use the messages available through their pages. Their output is a page capture, not an independently verified server history. Website changes, virtualized histories, authentication and expired attachment links can affect results. Gemini images are labeled neutrally, not assumed to be generated merely because Gemini displayed them.
+Other browser providers use the messages available through their pages. Their output is a page capture, not an independently verified server history. Muse scrolls its virtualized thread. Perplexity uses a document-start helper shared by both editions to keep the selected thread's virtual message rows rendered during export, including when Chrome suspends native intersection callbacks in background tabs. Normal virtualization resumes after completion or cancellation. Refresh the Perplexity chat once after installing or updating the extension so the helper can register before the page creates its observers. Both providers refuse an export when message positions cannot all be rendered. Both export conversation text and uploaded or displayed images, but not other file types. Perplexity omits its bulk Web sources. Its file pane is consulted for current image URLs, and signed and unsigned links to the same uploaded image are treated as one item. Muse's clickable image bubbles, including `blob:` images, are captured. Interactive non-image artifacts keep a text label, not a misleading download failure. Website changes, authentication and expired image links can still affect results. Gemini images are labeled neutrally, not assumed to be generated merely because Gemini displayed them.
 
 The extension transports data in acknowledged 256 Ki-character chunks instead of one giant Chrome message. There is no configured total attachment count, total transfer size, or whole-export deadline. Individual network requests still time out when stalled. Browser memory, ZIP format constraints, disk space and provider access remain real limits.
 
@@ -89,6 +91,22 @@ Please report issues with the exporter version, provider and redacted log. Do no
 ## Maintaining the split
 
 Make shared fixes in the private source checkout and run the tests. `node scripts/public-snapshot.js /absolute/path/to/new-directory` creates a new, audited public snapshot from an explicit source allowlist. It does not copy `.git`, local agent settings, browser profiles, downloads, or user conversations. Review that snapshot before publishing. For later public updates, transfer reviewed file changes only, never merge or push private Git history into the public repository.
+
+## 1.0.4
+
+Muse exports now capture uploaded and output images wrapped in clickable bubbles, including `blob:` images. Non-image files are left as text labels and do not create failed-download entries. The private app explains the text-and-images scope for Muse and Perplexity.
+
+## 1.0.3
+
+Perplexity exports now focus on conversation text and uploaded or displayed images. They omit automatic source citations, the Web source appendix and non-image attachments. Fresh signed image links from the file pane replace stale variants of the same underlying file, avoiding duplicate downloads and misleading failures.
+
+## 1.0.2
+
+Perplexity background exports now preserve the initially mounted tail and visit unloaded message rows individually when a normal scroll sweep fails to mount them. Progress logs report capture counts without exposing conversation text.
+
+## 1.0.1
+
+Private-only Muse and Perplexity browser adapters. They scan virtualized conversations, collect directly linked media and uploads, and include Perplexity source references. The public snapshot removes those adapters and host permissions.
 
 ## 1.0.0
 
