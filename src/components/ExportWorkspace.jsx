@@ -96,6 +96,7 @@ export function ExportWorkspace({ source }) {
     setReview(null);
     await work(`Exporting ${snapshot.length} chat${snapshot.length === 1 ? "" : "s"}…`, async signal => {
       const files = [];
+      const chatTitles = [];
       const failures = [];
       let duplicates = 0;
       for (const [position, item] of snapshot.entries()) {
@@ -115,13 +116,15 @@ export function ExportWorkspace({ source }) {
         }, signal);
         failures.push(...result.failures); duplicates += result.duplicates;
         const title = sanitizeFilename(session.title, "conversation");
+        chatTitles.push(title);
         for (const file of result.files) files.push({ ...file, filename: snapshot.length > 1 ? `${position + 1}-${title}/${file.filename}` : result.files.length === 1 ? title + ".md" : file.filename });
       }
       signal.throwIfAborted();
       if (files.length === 1) downloadBlob(files[0].filename, files[0].content);
       else {
         const zip = await bundleZip(files); signal.throwIfAborted();
-        downloadBlob("ai-chat-export.zip", zip, "application/zip");
+        const archiveTitle = chatTitles.length === 1 ? chatTitles[0] : `${chatTitles[0]}-and-${chatTitles.length - 1}-more-chats`;
+        downloadBlob(archiveTitle + ".zip", zip, "application/zip");
       }
       setNotice(`${snapshot.length} chat${snapshot.length === 1 ? "" : "s"} exported. ${duplicates} exact duplicate image${duplicates === 1 ? "" : "s"} reused.${failures.length ? ` ${failures.length} attachments could not be saved: ${failures.join("; ")}` : ""}`);
     });

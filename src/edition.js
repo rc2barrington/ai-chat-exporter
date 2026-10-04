@@ -1,6 +1,6 @@
 // The public snapshot replaces only this setting, not the shared exporters.
 export const EDITION = "public";
-export const VERSION = "1.0.7";
+export const VERSION = "1.0.8";
 export function localSources(edition = EDITION) {
   if (edition === "private") return ["codex", "opencode"];
   if (edition === "public") return ["codex", "claude-code"];
