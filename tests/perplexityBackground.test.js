@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import { expect, it, vi } from 'vitest';
-import { publicFile } from '../scripts/publicFiles.js';
+import { toPublicFile as publicFile } from '../scripts/publicFiles.js';
 
 const helper = readFileSync(new URL('../chrome-extension/perplexityBackground.js', import.meta.url), 'utf8');
 const scraper = readFileSync(new URL('../chrome-extension/privateBrowserAdapters.js', import.meta.url), 'utf8');

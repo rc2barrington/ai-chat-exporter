@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
 import path from "node:path";
 import { parseClaudeCodeJsonl } from "../src/parsers/claudeJsonl.js";
+import { readLines } from "./lineFiles.js";
 
 // Discover only top-level project sessions, not subagent logs or credentials.
 export function createClaudeSessions(home) {
@@ -54,7 +55,7 @@ export function createClaudeSessions(home) {
     if (!file) throw new Error("Scan sessions again before opening this session.");
     const resolved = await realpath(file.filename);
     if (!resolved.startsWith(file.root + path.sep)) throw new Error("Session path is outside its storage folder.");
-    return { ...parseClaudeCodeJsonl(await readFile(resolved, "utf8")), id, title: file.title };
+    return { ...parseClaudeCodeJsonl(await readLines(resolved)), id, title: file.title };
   }
   return { list, get };
 }

@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import App from "../src/App.jsx";
-import { EDITION, localSources, requireSource } from "../src/edition.js";
+import { EDITION, EDITIONS, SOURCE_NAMES, localSources, requireSource } from "../src/edition.js";
 import { createLocalSessions, localSessionsMiddleware } from "../server/localSessions.js";
 import { parseClaudeCodeJsonl } from "../src/parsers/claudeJsonl.js";
 import { sessionFiles } from "../src/utils/sessionExport.js";
@@ -13,20 +13,37 @@ import { sessionFiles } from "../src/utils/sessionExport.js";
 const roots = [];
 afterEach(async () => { vi.unstubAllGlobals(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 it("exposes exactly the intended sources in each edition", () => {
-  expect(localSources("private")).toEqual(["codex", "opencode"]);
+  expect(localSources("private")).toEqual(["codex", "claude-code", "opencode"]);
   expect(localSources("public")).toEqual(["codex", "claude-code"]);
-  expect(() => requireSource("claude-code", "private")).toThrow(/Unsupported/);
+  expect(() => requireSource("claude-code", "private")).not.toThrow();
   expect(() => requireSource("opencode", "public")).toThrow(/Unsupported/);
   expect(() => localSources("typo")).toThrow(/Unknown/);
 });
-it("does not offer a disabled source even when supplied in the URL", () => {
-  const disabled = EDITION === "public" ? "opencode" : "claude-code";
-  vi.stubGlobal("location", { hostname: "example.test", search: `?source=${disabled}` });
-  const html = renderToStaticMarkup(createElement(App));
-  expect(html).toContain("Export browser chats");
-  expect(html).not.toContain(EDITION === "public" ? "OpenCode" : "Claude Code");
+it("keeps every public source available in the private edition", () => {
+  for (const source of localSources("public")) expect(localSources("private")).toContain(source);
 });
-it.each([["private", "claude-code"], ["public", "opencode"]])("blocks disabled %s sources before reading storage", async (edition, source) => {
+it("gives each edition its own port and repository", () => {
+  expect(EDITIONS.private.port).not.toBe(EDITIONS.public.port);
+  expect(EDITIONS.private.repository).not.toBe(EDITIONS.public.repository);
+});
+it("offers every enabled source, and only those, in the sidebar", () => {
+  vi.stubGlobal("location", { hostname: "example.test", search: "" });
+  const html = renderToStaticMarkup(createElement(App));
+  for (const source of localSources()) expect(html).toContain(`<strong>${SOURCE_NAMES[source]}</strong>`);
+  for (const source of Object.keys(SOURCE_NAMES).filter(s => !localSources().includes(s))) expect(html).not.toContain(`<strong>${SOURCE_NAMES[source]}</strong>`);
+});
+it("does not offer a disabled public source even when supplied in the URL", () => {
+  vi.stubGlobal("location", { hostname: "example.test", search: "?source=opencode" });
+  const html = renderToStaticMarkup(createElement(App));
+  if (EDITION === "public") {
+    expect(html).toContain("Export browser chats");
+    expect(html).not.toContain("OpenCode");
+  } else {
+    expect(html).toContain("Export OpenCode chats");
+  }
+});
+it("blocks disabled public sources before reading storage", async () => {
+  const [edition, source] = ["public", "opencode"];
   const store = createLocalSessions({ edition });
   await expect(store.list(source)).rejects.toThrow(/Unsupported/);
   await expect(store.get(source, "id")).rejects.toThrow(/Unsupported/);
@@ -37,6 +54,15 @@ it.each([["private", "claude-code"], ["public", "opencode"]])("blocks disabled %
     await localSessionsMiddleware({ list: read, get: read, attachment: read }, edition)({ method: "GET", headers: { host: "127.0.0.1:9999", "x-ai-exporter": "local-sessions" }, url: `/api/local-sessions?source=${source}${suffix}` }, res, () => {});
     expect(read).not.toHaveBeenCalled(); expect(res.statusCode).toBe(400); expect(body.error).toMatch(/Unsupported/);
   }
+});
+it("lets the private edition read Claude Code sessions", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "exporter-private-claude-")); roots.push(root);
+  const project = path.join(root, "projects", "example"); await mkdir(project, { recursive: true });
+  const id = "00000000-0000-0000-0000-000000000003";
+  await writeFile(path.join(project, id + ".jsonl"), [{ type: "user", message: { content: "Hello" } }, { type: "custom-title", customTitle: "Private Claude chat" }].map(JSON.stringify).join("\n"));
+  const store = createLocalSessions({ edition: "private", claudeHome: root });
+  expect((await store.list("claude-code")).map(s => s.title)).toEqual(["Private Claude chat"]);
+  expect((await store.get("claude-code", id)).messages).toHaveLength(1);
 });
 it("discovers Claude Code titles without listing subagents, symlinks, or opening prompts", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "exporter-claude-fixture-")); roots.push(root);
