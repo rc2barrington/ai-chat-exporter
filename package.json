@@ -1,7 +1,7 @@
 {
   "name": "ai-chat-exporter",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,9 +13,8 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "package:downloads": "node scripts/package-downloads.js",
-    "predeploy": "node scripts/check-public.js && npm run build && npm run package:downloads",
-    "deploy": "node scripts/check-public.js && gh-pages -d dist -b gh-pages -m \"Deploy site\"",
-    "release:public": "node scripts/public-snapshot.js"
+    "predeploy": "node scripts/check-deploy.js && npm run build && npm run package:downloads",
+    "deploy": "node scripts/check-deploy.js && gh-pages -d dist -b gh-pages -m \"Deploy site\""
   },
   "dependencies": {
     "dompurify": "^3.4.5",

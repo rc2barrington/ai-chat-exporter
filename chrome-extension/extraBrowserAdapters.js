@@ -1,5 +1,5 @@
-// Muse and Perplexity browser adapters, shared by both editions.
-globalThis.AIChatExporterPrivateAdapters = (() => {
+// Muse and Perplexity browser adapters.
+globalThis.AIChatExporterExtraAdapters = (() => {
   function siteName(href) {
     try {
       const u = new URL(href);
@@ -72,7 +72,7 @@ globalThis.AIChatExporterPrivateAdapters = (() => {
     const provider = siteName(href);
     if (provider === 'Muse') return museEntries(doc);
     if (provider === 'Perplexity') return perplexityEntries(doc, options);
-    throw new Error('This provider is unavailable in this edition.');
+    throw new Error('This provider is not supported.');
   }
   function renderEntries(items, doc, href, { includeMedia = true, supplementalFiles = null } = {}) {
     const provider = siteName(href), remoteQueue = [], media = new Map(), failedFetches = [];
@@ -305,7 +305,7 @@ globalThis.AIChatExporterPrivateAdapters = (() => {
   }
   async function exportConversation(doc, href, options = {}) {
     const provider = siteName(href);
-    if (!provider) throw new Error('This provider is unavailable in this edition.');
+    if (!provider) throw new Error('This provider is not supported.');
     const signal = options.signal;
     const progress = message => options.onProgress?.(message);
     const check = () => {

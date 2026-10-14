@@ -4,11 +4,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { localSessionsMiddleware, LOCAL_APP_VERSION } from "./localSessions.js";
-import { EDITION, LOCAL_PORT } from "../src/edition.js";
+import { LOCAL_PORT } from "../src/appConfig.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist");
 const built = JSON.parse(await readFile(path.join(root, "build-info.json"), "utf8"));
-if (built.edition !== EDITION || built.version !== LOCAL_APP_VERSION) throw new Error("The built website does not match this server edition. Build the app or unzip a matching download first.");
+if (built.version !== LOCAL_APP_VERSION) throw new Error("The built website does not match this server version. Build the app or unzip a matching download first.");
 const port = Number(process.env.AI_EXPORTER_PORT || LOCAL_PORT);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_EXPORTER_PORT must be an integer from 1024 through 65535.");
 const address = `http://127.0.0.1:${port}/ai-chat-exporter/?source=codex`;
@@ -34,7 +34,7 @@ server.on("error", async error => {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/local-sessions?status=1`, { headers: { "X-AI-Exporter": "local-sessions" }, signal: AbortSignal.timeout(3000) });
     const info = await response.json();
-    if (info.app === "ai-chat-exporter" && info.version === LOCAL_APP_VERSION && info.edition === EDITION) { console.log(`The local app is already running at ${address}`); openBrowser(); return; }
+    if (info.app === "ai-chat-exporter" && info.version === LOCAL_APP_VERSION) { console.log(`The local app is already running at ${address}`); openBrowser(); return; }
   } catch { /* Never silently open an older exporter or an unrelated app. */ }
   console.error("An older exporter or another app is using this address. Close the previous exporter launcher window, then open this launcher again.");
   process.exitCode = 1;

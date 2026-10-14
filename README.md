@@ -2,17 +2,9 @@
 
 Save browser conversations and local coding sessions as readable Markdown, with available attachments. No sign-up, analytics, or exporter-hosted conversation storage.
 
-## Editions
-
-<!-- edition:start -->
-This checkout is the **public edition**. Its local app reads Codex and Claude Code, and runs on your computer at port 4179.
-
-The private edition reads Codex, Claude Code and OpenCode at port 4178. Both editions include the same browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google AI Mode, Muse and Perplexity.
-
 **[Open the website](https://rc2barrington.github.io/ai-chat-exporter/)**
-<!-- edition:end -->
 
-Edition selection is defined in `src/edition.js` and enforced in both the interface and local API. The source is shared; disabled providers cannot be discovered or exported through that edition's API. The public repository starts with new Git history and contains no private repository history.
+Browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google AI Mode, Muse and Perplexity. Local coding chats: Codex, Claude Code and OpenCode.
 
 ## Get started
 
@@ -30,7 +22,7 @@ Enable **AI replies only** in the extension's Export Settings, or in Export opti
 
 Choose a local source in the sidebar and download the Mac local app. Unzip it, then double-click **Open AI Chat Exporter.command**. Requires [Node.js](https://nodejs.org/en/download) 22.13 or newer. No `npm install` is needed for the packaged app. Keep its launcher window open while exporting. Developers can use the commands below directly from a checkout.
 
-The local app opens directly to Codex and automatically lists saved chats. Choose another enabled source in the sidebar for its saved conversations. Search, select, and export. Everything starts unselected. Manual file import is tucked under Advanced and is only needed for backups or files from another computer.
+The local app opens directly to Codex and automatically lists saved chats. Choose another source in the sidebar for its saved conversations. Search, select, and export. Everything starts unselected. Manual file import is tucked under Advanced and is only needed for backups or files from another computer.
 
 - Codex: discovers `sessions` and `archived_sessions` under `$CODEX_HOME`, defaulting to `~/.codex`. Uses the state database's sidebar `name`, not the prompt stored in `title`. Falls back to the latest session-index name. Internal reviews and subagents are excluded from the main list, and copies of the same session are not listed twice. Parses the rollout message stream once, excluding mirrored UI events and injected system/developer instructions.
 - OpenCode: reads `$XDG_DATA_HOME/opencode/opencode.db`, defaulting to `~/.local/share/opencode/opencode.db`, in read-only transactions. Includes text, saved reasoning, file parts, tool calls and results; excludes reverted tail messages.
@@ -54,7 +46,7 @@ The local app opens directly to Codex and automatically lists saved chats. Choos
 
 ChatGPT text is reconstructed from the authoritative active root-to-current chain, including paginated history. If that chain cannot be established, no partial ChatGPT export is presented as complete. Markdown uses `history_status: complete` for a verified chain. An optional rendered-media recovery sweep no longer produces a misleading `root history reached: false` field in the document.
 
-Other browser providers use the messages available through their pages. Their output is a page capture, not an independently verified server history. Muse scrolls its virtualized thread. Perplexity uses a document-start helper shared by both editions to keep the selected thread's virtual message rows rendered during export, including when Chrome suspends native intersection callbacks in background tabs. Normal virtualization resumes after completion or cancellation. Refresh the Perplexity chat once after installing or updating the extension so the helper can register before the page creates its observers. Both providers refuse an export when message positions cannot all be rendered. Both export conversation text and uploaded or displayed images, but not other file types. Perplexity omits its bulk Web sources. Its file pane is consulted for current image URLs, and signed and unsigned links to the same uploaded image are treated as one item. Muse's clickable image bubbles, including `blob:` images, are captured. Interactive non-image artifacts keep a text label, not a misleading download failure. Website changes, authentication and expired image links can still affect results. Gemini images are labeled neutrally, not assumed to be generated merely because Gemini displayed them.
+Other browser providers use the messages available through their pages. Their output is a page capture, not an independently verified server history. Muse scrolls its virtualized thread. Perplexity uses a document-start helper to keep the selected thread's virtual message rows rendered during export, including when Chrome suspends native intersection callbacks in background tabs. Normal virtualization resumes after completion or cancellation. Refresh the Perplexity chat once after installing or updating the extension so the helper can register before the page creates its observers. Both providers refuse an export when message positions cannot all be rendered. Both export conversation text and uploaded or displayed images, but not other file types. Perplexity omits its bulk Web sources. Its file pane is consulted for current image URLs, and signed and unsigned links to the same uploaded image are treated as one item. Muse's clickable image bubbles, including `blob:` images, are captured. Interactive non-image artifacts keep a text label, not a misleading download failure. Website changes, authentication and expired image links can still affect results. Gemini images are labeled neutrally, not assumed to be generated merely because Gemini displayed them.
 
 The extension transports data in acknowledged 256 Ki-character chunks instead of one giant Chrome message. There is no configured total attachment count, total transfer size, or whole-export deadline. Individual network requests still time out when stalled. Browser memory, ZIP format constraints, disk space and provider access remain real limits.
 
@@ -85,21 +77,15 @@ npm run local
 | `npm run build` | Build the website in `dist/` |
 | `npm run package:downloads` | Build extension and local-app ZIPs after building the site |
 | `npm run build:standalone` | Single-file offline import UI in `dist-standalone/` |
-| `npm run deploy` | Public edition only: build, package and publish GitHub Pages |
+| `npm run deploy` | Build, package and publish GitHub Pages (checks the Git remote first) |
 
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
-## Maintaining the split
+## 1.2.0
 
-The private checkout is the only place to make changes. The public repository is generated from it and never edited by hand.
-
-1. Make and commit the change here, with `npm test` passing.
-2. Run `npm run release:public`. It refuses to run while any release file is uncommitted, so every public release matches a private commit. It mirrors the allowlisted files into `../ai-chat-exporter-public`, including deletions, and produces the public `src/edition.js` and README edition section from the `EDITIONS` table. It never copies `.git`, local agent settings, browser profiles, downloads or conversations, and it never commits or pushes.
-3. In the public checkout, run `npm ci`, `npm test` and `npm run build`, review `git diff`, then commit, push, and `npm run deploy`.
-
-Pass an absolute path to a directory that does not exist yet to create a fresh snapshot instead. Never merge or push private Git history into the public repository.
+One app and one repository. The separate private edition is retired: OpenCode, Claude Code and Codex are all available in the local app at port 4179, and the edition machinery (edition settings, release snapshot script, separate port and publishing guard) is removed. The Muse and Perplexity adapter file is renamed `extraBrowserAdapters.js`, since nothing about it was private.
 
 ## 1.1.0
 

@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { buildConsoleCode } from "../parsers/browserScript.js";
 import { copyToClipboard } from "../utils/download.js";
-import { VERSION } from "../edition.js";
-import "../../chrome-extension/privateBrowserAdapters.js";
+import { VERSION } from "../appConfig.js";
+import "../../chrome-extension/extraBrowserAdapters.js";
 
 export function BrowserSetup() {
   const [copied, setCopied] = useState(false);
   const [repliesOnlyText, setRepliesOnlyText] = useState(false);
   return <>
     <section className="panel browser-intro"><span className="eyebrow">2 · Connect your browser</span><h2>Export directly from your open chats</h2><p>The Chrome extension finds your open conversations. Choose the chats you want, include attachments, and save them as readable Markdown.</p>
-      <div className="provider-pills">{["ChatGPT", "Claude.ai", "Gemini", "Grok", "Google AI Mode", "AI Overviews", ...globalThis.AIChatExporterPrivateAdapters.names].map(p => <span key={p}>{p}</span>)}</div>
-      {globalThis.AIChatExporterPrivateAdapters.names.includes("Perplexity") && <p className="fine-print">Muse and Perplexity export conversation text plus uploaded or displayed images. Other file attachments and Perplexity's bulk source list are skipped. After installing or updating the extension, refresh your Perplexity chat once to enable background rendering.</p>}
+      <div className="provider-pills">{["ChatGPT", "Claude.ai", "Gemini", "Grok", "Google AI Mode", "AI Overviews", ...globalThis.AIChatExporterExtraAdapters.names].map(p => <span key={p}>{p}</span>)}</div>
+      {globalThis.AIChatExporterExtraAdapters.names.includes("Perplexity") && <p className="fine-print">Muse and Perplexity export conversation text plus uploaded or displayed images. Other file attachments and Perplexity's bulk source list are skipped. After installing or updating the extension, refresh your Perplexity chat once to enable background rendering.</p>}
       <a className="button" href={`${import.meta.env.BASE_URL}downloads/ai-chat-exporter-extension.zip`} download>Download Chrome extension ↓</a>
       <span className="release-note">v{VERSION} · No account or subscription</span>
     </section>

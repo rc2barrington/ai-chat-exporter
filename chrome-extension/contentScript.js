@@ -150,10 +150,10 @@
 
     try {
 
-    if (globalThis.AIChatExporterPrivateAdapters?.siteName(location.href)) {
-      const privateProvider = globalThis.AIChatExporterPrivateAdapters.siteName(location.href);
-      updateProgress(`Reading ${privateProvider} messages and images...`);
-      const data = await globalThis.AIChatExporterPrivateAdapters.exportConversation(document, location.href, {
+    if (globalThis.AIChatExporterExtraAdapters?.siteName(location.href)) {
+      const extraProvider = globalThis.AIChatExporterExtraAdapters.siteName(location.href);
+      updateProgress(`Reading ${extraProvider} messages and images...`);
+      const data = await globalThis.AIChatExporterExtraAdapters.exportConversation(document, location.href, {
         includeMedia: options.includeMedia, signal: abortController.signal, onProgress: updateProgress,
         requireBackgroundRendering: true,
       });

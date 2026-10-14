@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { parseCodexJsonl } from "../parsers/codexJsonl.js";
 import { parseOpenCode } from "../parsers/opencode.js";
 import { parseClaudeCodeJsonl } from "../parsers/claudeJsonl.js";
-import { LOCAL_PORT, SOURCE_NAMES } from "../edition.js";
+import { LOCAL_PORT, SOURCE_NAMES } from "../appConfig.js";
 import { generateMarkdown } from "../generators/markdown.js";
 import { downloadBlob, sanitizeFilename } from "../utils/download.js";
 import { bundleZip } from "../utils/zip.js";

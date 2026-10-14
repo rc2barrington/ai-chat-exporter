@@ -7,12 +7,12 @@ import { createCodexParser } from "../src/parsers/codexJsonl.js";
 import { forEachLine, inlineAttachmentStore } from "./lineFiles.js";
 import { parseOpenCode } from "../src/parsers/opencode.js";
 import { codexFallbackTitle, isInternalCodexSession } from "../src/parsers/codexMetadata.js";
-import { EDITION, VERSION, requireSource, localSources } from "../src/edition.js";
+import { VERSION, requireSource, localSources } from "../src/appConfig.js";
 import { createClaudeSessions } from "./claudeSessions.js";
 
 export const LOCAL_APP_VERSION = VERSION;
 
-export function createLocalSessions({ edition = EDITION, claudeHome = process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), codexHome = process.env.CODEX_HOME || path.join(homedir(), ".codex"),
+export function createLocalSessions({ claudeHome = process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), ".claude"), codexHome = process.env.CODEX_HOME || path.join(homedir(), ".codex"),
   openCodeHome = path.join(process.env.XDG_DATA_HOME || path.join(homedir(), ".local", "share"), "opencode") } = {}) {
   const files = new Map();
   const claude = createClaudeSessions(claudeHome);
@@ -24,7 +24,7 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
     try { return fn(db); } finally { db.close(); }
   }
   async function list(source) {
-    requireSource(source, edition);
+    requireSource(source);
     if (source === "claude-code") return claude.list();
     if (source === "opencode") return database(db => {
       const columns = new Set(db.prepare("PRAGMA table_info(session)").all().map(c => c.name));
@@ -90,7 +90,7 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
     return results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
   async function get(source, id, keep) {
-    requireSource(source, edition);
+    requireSource(source);
     if (source === "claude-code") return claude.get(id, keep);
     if (source === "opencode") return database(db => {
       db.exec("BEGIN");
@@ -129,7 +129,7 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
     return session;
   }
   async function attachment(source, id, index) {
-    requireSource(source, edition);
+    requireSource(source);
     const entry = attachmentLists.get(source + ":" + id)?.[index];
     if (entry?.url.startsWith("local:")) {
       const bytes = inlineAttachments.get(source + ":" + id)?.[Number(entry.url.slice(6))];
@@ -154,7 +154,7 @@ async function hasCodexConversation(filename) {
   return found;
 }
 
-export function localSessionsMiddleware(store = createLocalSessions(), edition = EDITION) {
+export function localSessionsMiddleware(store = createLocalSessions()) {
   return async (req, res, next) => {
     if (!req.url.startsWith("/api/local-sessions")) return next();
     res.setHeader("Cache-Control", "no-store");
@@ -169,9 +169,9 @@ export function localSessionsMiddleware(store = createLocalSessions(), edition =
     try {
       const url = new URL(req.url, `http://${host}`);
       if (url.pathname !== "/api/local-sessions") throw new Error("Unknown endpoint.");
-      if (url.searchParams.get("status") === "1") return res.end(JSON.stringify({ app: "ai-chat-exporter", version: LOCAL_APP_VERSION, edition, sources: localSources(edition) }));
+      if (url.searchParams.get("status") === "1") return res.end(JSON.stringify({ app: "ai-chat-exporter", version: LOCAL_APP_VERSION, sources: localSources() }));
       const source = url.searchParams.get("source");
-      requireSource(source, edition);
+      requireSource(source);
       const id = url.searchParams.get("id");
       if (url.searchParams.has("attachment")) {
         const index = url.searchParams.get("attachment");

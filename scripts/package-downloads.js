@@ -2,10 +2,10 @@ import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
 import "../chrome-extension/exportCore.js";
-import { EDITION, VERSION, localSources, SOURCE_NAMES } from "../src/edition.js";
+import { VERSION, localSources, SOURCE_NAMES } from "../src/appConfig.js";
 
 const built = JSON.parse(await readFile("dist/build-info.json", "utf8"));
-if (built.edition !== EDITION || built.version !== VERSION) throw new Error("Build this edition before packaging it. Existing build belongs to a different edition or version.");
+if (built.version !== VERSION) throw new Error("Build the site before packaging it. The existing build belongs to a different version.");
 
 const output = path.resolve("dist/downloads");
 await mkdir(output, { recursive: true });
@@ -24,10 +24,10 @@ globalThis.AIChatExporterCore.stampZip(extension);
 await writeFile(path.join(output, "ai-chat-exporter-extension.zip"), await extension.generateAsync({ type: "nodebuffer", platform: "UNIX", compression: "DEFLATE" }));
 const local = new JSZip();
 for (const directory of ["dist", "server", "src/parsers"]) await addTree(local, directory, "ai-chat-exporter-local/" + directory);
-local.file("ai-chat-exporter-local/src/edition.js", await readFile("src/edition.js"));
+local.file("ai-chat-exporter-local/src/appConfig.js", await readFile("src/appConfig.js"));
 local.file("ai-chat-exporter-local/dist/downloads/ai-chat-exporter-extension.zip", await readFile(path.join(output, "ai-chat-exporter-extension.zip")));
 local.file("ai-chat-exporter-local/Open AI Chat Exporter.command", await readFile("Open AI Chat Exporter.command"), { unixPermissions: "100755" });
-local.file("ai-chat-exporter-local/START HERE.txt", `AI Chat Exporter (${EDITION} edition)\n\nUnzip this folder. Double-click Open AI Chat Exporter.command. Requires Node.js 22.13 or newer: https://nodejs.org/en/download\n\nThe app runs only on this computer. Choose ${localSources().map(s => SOURCE_NAMES[s]).join(" or ")} to find saved chats. No terminal commands or npm install are needed. Keep the launcher window open while using the app.\n`);
+local.file("ai-chat-exporter-local/START HERE.txt", `AI Chat Exporter ${VERSION}\n\nUnzip this folder. Double-click Open AI Chat Exporter.command. Requires Node.js 22.13 or newer: https://nodejs.org/en/download\n\nThe app runs only on this computer. Choose ${localSources().map(s => SOURCE_NAMES[s]).join(", ")} to find saved chats. No terminal commands or npm install are needed. Keep the launcher window open while using the app.\n`);
 globalThis.AIChatExporterCore.stampZip(local);
 await writeFile(path.join(output, "ai-chat-exporter-local.zip"), await local.generateAsync({ type: "nodebuffer", platform: "UNIX", compression: "DEFLATE" }));
 console.log("Built extension and local app downloads with current file and folder timestamps.");

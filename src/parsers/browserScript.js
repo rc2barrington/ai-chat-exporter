@@ -1,6 +1,6 @@
 import { stripMarkdown } from "../utils/stripMarkdown.js";
 import browserAdapters from "../../chrome-extension/browserAdapters.js?raw";
-import privateBrowserAdapters from "../../chrome-extension/privateBrowserAdapters.js?raw";
+import extraBrowserAdapters from "../../chrome-extension/extraBrowserAdapters.js?raw";
 import exportCore from "../../chrome-extension/exportCore.js?raw";
 
 // Browser console export script for ChatGPT, Claude.ai, Gemini, Grok.
@@ -32,7 +32,7 @@ export function buildConsoleCode(opts = {}) {
   return `${header}
 (async function() {
   ${browserAdapters}
-  ${privateBrowserAdapters}
+  ${extraBrowserAdapters}
   ${exportCore}
   var adapters = globalThis.AIChatExporterBrowserAdapters;
   // Replies-only mode: no media, no markdown, assistant turns only.
@@ -51,9 +51,9 @@ export function buildConsoleCode(opts = {}) {
   var isClaude = !isGrok && !!document.querySelector('[data-testid="user-message"]');
   var isGemini = !isGrok && !!document.querySelector('user-query');
   var isGoogle = adapters.isGoogleSearch(location.href);
-  var isPrivateProvider = !!globalThis.AIChatExporterPrivateAdapters?.siteName(location.href);
+  var isExtraProvider = !!globalThis.AIChatExporterExtraAdapters?.siteName(location.href);
 
-  if (!isChatGPT && !isClaude && !isGemini && !isGrok && !isGoogle && !isPrivateProvider) {
+  if (!isChatGPT && !isClaude && !isGemini && !isGrok && !isGoogle && !isExtraProvider) {
     alert("No messages found. Open this on a Claude.ai, ChatGPT, Gemini, or Grok conversation.");
     return;
   }
@@ -320,10 +320,10 @@ export function buildConsoleCode(opts = {}) {
   }
 
   console.log('[Exporter] Scanning conversation...');
-  if (isGoogle || isPrivateProvider) {
+  if (isGoogle || isExtraProvider) {
     try {
-      var googleData = isPrivateProvider
-        ? await globalThis.AIChatExporterPrivateAdapters.exportConversation(document, location.href, { includeMedia: !REPLIES_ONLY_TXT })
+      var googleData = isExtraProvider
+        ? await globalThis.AIChatExporterExtraAdapters.exportConversation(document, location.href, { includeMedia: !REPLIES_ONLY_TXT })
         : await adapters.exportGoogle(document, location.href, { includeMedia: !REPLIES_ONLY_TXT });
       ordered = googleData.messages;
       mediaQueue = googleData.remoteQueue;
@@ -365,10 +365,10 @@ export function buildConsoleCode(opts = {}) {
   console.log('[Exporter] Captured ' + ordered.length + ' messages, ' + mediaQueue.length + ' media items');
 
   // ----- Fetch media, build zip -----
-  var appendix = (isGoogle || isPrivateProvider) && googleData ? googleData.appendix || '' : '';
+  var appendix = (isGoogle || isExtraProvider) && googleData ? googleData.appendix || '' : '';
   var referenceTargets = appendix ? ordered.concat([{ text: appendix }]) : ordered;
-  var failedFetches = (isGoogle || isPrivateProvider) && googleData ? [...(googleData.failedFetches || [])] : [];
-  var savedMedia = (isGoogle || isPrivateProvider) && googleData ? [...(googleData.savedMedia || [])] : [];
+  var failedFetches = (isGoogle || isExtraProvider) && googleData ? [...(googleData.failedFetches || [])] : [];
+  var savedMedia = (isGoogle || isExtraProvider) && googleData ? [...(googleData.savedMedia || [])] : [];
   // Replies-only output is plain text, so skip the media downloads entirely
   // rather than fetching files that would never be referenced.
   if (REPLIES_ONLY_TXT) mediaQueue.length = 0;
@@ -458,7 +458,7 @@ export function buildConsoleCode(opts = {}) {
   savedMedia = dedupedMedia.savedMedia;
   if (appendix) appendix = referenceTargets[referenceTargets.length - 1].text;
   // ----- Markdown -----
-  var title = (isGoogle || isPrivateProvider) ? googleData.title : document.title.replace(/[-|].*(Claude|ChatGPT|Gemini|Grok).*/i, '').trim() || (siteName + ' Conversation');
+  var title = (isGoogle || isExtraProvider) ? googleData.title : document.title.replace(/[-|].*(Claude|ChatGPT|Gemini|Grok).*/i, '').trim() || (siteName + ' Conversation');
   var date = new Date().toISOString();
   var nl = '\\n';
   var md = '---' + nl;
@@ -468,7 +468,7 @@ export function buildConsoleCode(opts = {}) {
   md += 'message_count: ' + ordered.length + nl;
   md += 'media_count: ' + savedMedia.length + nl;
   if (failedFetches.length) md += 'media_failed: ' + failedFetches.length + nl;
-  if ((isGoogle || isPrivateProvider) && googleData && googleData.history) {
+  if ((isGoogle || isExtraProvider) && googleData && googleData.history) {
     md += 'history_status: ' + googleData.history.status + nl;
     if (googleData.history.basis) md += 'history_basis: ' + JSON.stringify(googleData.history.basis) + nl;
   }
