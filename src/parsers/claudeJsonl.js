@@ -27,10 +27,13 @@
 
 import { attachmentText } from "./attachments.js";
 
+// Accepts the whole file as a string, or any iterable of its lines. The local
+// app passes lines so a very large log never has to exist as one string.
 export function parseClaudeCodeJsonl(fileContent) {
   const rows = [];
   const warnings = [], attachments = [];
-  for (const line of fileContent.split("\n")) {
+  const lines = typeof fileContent === "string" ? fileContent.split("\n") : fileContent || [];
+  for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {

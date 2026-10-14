@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { parseCodexJsonl } from "../src/parsers/codexJsonl.js";
+import { createCodexParser } from "../src/parsers/codexJsonl.js";
+import { forEachLine, inlineAttachmentStore } from "./lineFiles.js";
 import { parseOpenCode } from "../src/parsers/opencode.js";
 import { codexFallbackTitle, isInternalCodexSession } from "../src/parsers/codexMetadata.js";
 import { EDITION, VERSION, requireSource, localSources } from "../src/edition.js";
@@ -16,6 +17,7 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
   const files = new Map();
   const claude = createClaudeSessions(claudeHome);
   const attachmentLists = new Map();
+  const inlineAttachments = new Map();
   async function database(fn) {
     const { DatabaseSync } = await import("node:sqlite");
     const db = new DatabaseSync(path.join(openCodeHome, "opencode.db"), { readOnly: true });
@@ -71,6 +73,9 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
           const id = sessionID || createHash("sha256").update(filename).digest("hex");
           if (seen.has(id)) continue;
           seen.add(id);
+          // Sessions aborted before anyone spoke contain no conversation. Listing
+          // them only adds rows that export to an empty file.
+          if (!(await hasCodexConversation(filename))) continue;
           const details = await stat(filename);
           const title = titles.get(sessionID) || codexFallbackTitle(entry.name);
           files.set(id, { filename, root, title });
@@ -84,9 +89,9 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
     }
     return results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
-  async function get(source, id) {
+  async function get(source, id, keep) {
     requireSource(source, edition);
-    if (source === "claude-code") return claude.get(id);
+    if (source === "claude-code") return claude.get(id, keep);
     if (source === "opencode") return database(db => {
       db.exec("BEGIN");
       try {
@@ -109,22 +114,44 @@ export function createLocalSessions({ edition = EDITION, claudeHome = process.en
     if (!file) throw new Error("Scan sessions again before opening this session.");
     const resolved = await realpath(file.filename);
     if (!resolved.startsWith(file.root + path.sep)) throw new Error("Session path is outside its storage folder.");
-    return parseCodexJsonl(await readFile(resolved, "utf8"), { fileName: path.basename(resolved), title: file.title });
+    const parser = createCodexParser({ fileName: path.basename(resolved), title: file.title, storeAttachment: keep });
+    await forEachLine(resolved, line => { parser.push(line); });
+    return parser.finish();
   }
   async function open(source, id) {
-    const session = await get(source, id);
-    attachmentLists.set(source + ":" + id, session.attachments || []);
+    const inline = inlineAttachmentStore();
+    const session = await get(source, id, record => inline.keep(record));
+    // Claude Code attachments are produced after its tree is resolved, so
+    // move their inline data here instead.
+    session.attachments = (session.attachments || []).map(record => inline.keep(record));
+    attachmentLists.set(source + ":" + id, session.attachments);
+    inlineAttachments.set(source + ":" + id, inline.stored);
     return session;
   }
   async function attachment(source, id, index) {
     requireSource(source, edition);
     const entry = attachmentLists.get(source + ":" + id)?.[index];
+    if (entry?.url.startsWith("local:")) {
+      const bytes = inlineAttachments.get(source + ":" + id)?.[Number(entry.url.slice(6))];
+      if (!bytes) throw new Error("This attachment is no longer loaded. Open the session again.");
+      return { bytes, type: entry.mime || "application/octet-stream" };
+    }
     if (!entry || !entry.url.startsWith("file:")) throw new Error("This attachment is not available as a local file. Open the session again.");
     const filename = await realpath(fileURLToPath(entry.url));
     if (!(await stat(filename)).isFile()) throw new Error("Attachment is not a file.");
     return { bytes: await readFile(filename), type: entry.mime || "application/octet-stream" };
   }
   return { list, get: open, attachment };
+}
+
+// True when a rollout holds at least one user or assistant message. Stops at
+// the first one, so even very large files are only read briefly.
+async function hasCodexConversation(filename) {
+  let found = false;
+  await forEachLine(filename, line => {
+    if (/"type":\s*"response_item"/.test(line) && /"type":\s*"message"/.test(line) && /"role":\s*"(?:user|assistant)"/.test(line)) { found = true; return false; }
+  });
+  return found;
 }
 
 export function localSessionsMiddleware(store = createLocalSessions(), edition = EDITION) {

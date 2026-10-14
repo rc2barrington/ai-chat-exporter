@@ -1,6 +1,6 @@
 {
   "edition": "public",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "files": [
     {
       "name": ".github/workflows/ci.yml",
@@ -16,7 +16,7 @@
     },
     {
       "name": "README.md",
-      "sha256": "0891fe18c858a11f980c188d01dd0c48019897804fe8a0695dc7a24697754dac"
+      "sha256": "5c94ab81efe5a4514ac6ef370668f873f7acad1f8fd0f172ee2e42179d9ff684"
     },
     {
       "name": "SECURITY.md",
@@ -24,7 +24,7 @@
     },
     {
       "name": "chrome-extension/background.js",
-      "sha256": "d39c9699e4bf15401d4fb270c21a2783fcf512ea311bb00a7bdd4fea5ba4c394"
+      "sha256": "4a3b9b85dd961cb682e02ed06b08779210d21a54c697a94f113bea077bef40c0"
     },
     {
       "name": "chrome-extension/browserAdapters.js",
@@ -36,7 +36,7 @@
     },
     {
       "name": "chrome-extension/contentScript.js",
-      "sha256": "bfa9b6ddc4e83bcb76bc780c546a2626f214954d8ff3933df30e91c0219ec943"
+      "sha256": "8925165533e46de5584dec8763c2a9e65488bec65892128234e10b12cbd906cf"
     },
     {
       "name": "chrome-extension/exportCore.js",
@@ -72,7 +72,7 @@
     },
     {
       "name": "chrome-extension/manifest.json",
-      "sha256": "d609632014c44d8dc35e66ed0db113f0982eca0c4f39cc71f24f83108f316739"
+      "sha256": "0611288a91122b79706fa9f81f7250fd2bd424872fa28175a23ce50879ddcabe"
     },
     {
       "name": "chrome-extension/offscreen.html",
@@ -80,15 +80,23 @@
     },
     {
       "name": "chrome-extension/offscreen.js",
-      "sha256": "37899591208e62c4725541f63bfbde969d0803a38ba5c89ff13d0546e76a8b3e"
+      "sha256": "cb64606a51d6398baee21b283d3e9db5fecdcb123cc3f1c71e6c2cc6caef2944"
+    },
+    {
+      "name": "chrome-extension/perplexityBackground.js",
+      "sha256": "38d66f2b40102a2925f69c81e5a9d1a7433786fea205a505902276e3726b478b"
     },
     {
       "name": "chrome-extension/popup.html",
-      "sha256": "a1341eeef2208fa73533aa89e2113572fa79653f6be4a1d038ec9fa5b635c775"
+      "sha256": "d312ca5a13aa3606fdb0769b1a4eb06590c8aff733dac121dc5c194605c14915"
     },
     {
       "name": "chrome-extension/popup.js",
-      "sha256": "cb5852e281f025df56396c08dc717f5d61f136fee8c9f8d919f7313773b6359f"
+      "sha256": "3cca854e28f12be6ebb09adb2b5b83f44942fbb11e5fbc32662ae373c4dac92e"
+    },
+    {
+      "name": "chrome-extension/privateBrowserAdapters.js",
+      "sha256": "73f088f7a0a1638eb4b581d1c0cffecd66cfa6ec9c68cbf1e957518e9a1fea9b"
     },
     {
       "name": "eslint.config.js",
@@ -108,11 +116,11 @@
     },
     {
       "name": "package-lock.json",
-      "sha256": "1003f9cfba7a11fa6c55920a8bf4c8f16f2984c07e3940fe09a84eb9f32e6a51"
+      "sha256": "034e0f311e8c173b8e19ec64c2185c4f70216df686dbc72b3a1ba43b9d51b7fc"
     },
     {
       "name": "package.json",
-      "sha256": "2d50c845b1395be44b23f9906b2d9808a2e92cc4b5a2ae6f09dcce09b5d033c9"
+      "sha256": "e87c38ffe597d76af8f81b07b71529b8b06a3b39ab5858a3bcb76587fbb614e9"
     },
     {
       "name": "public/favicon.svg",
@@ -132,7 +140,11 @@
     },
     {
       "name": "scripts/public-snapshot.js",
-      "sha256": "63615ef21b60421a7569b59810a7961d717f69342188227ac6b24490890638d3"
+      "sha256": "2c7995d93b65e02cabdc176118b5d6cff4f594c15fff3d18c078e03580dd93b5"
+    },
+    {
+      "name": "scripts/publicFiles.js",
+      "sha256": "17f1759bb9efcfea30d300152c54f3cb5f5c483de702d7d1a99eb597c72cc041"
     },
     {
       "name": "scripts/verify-distribution.js",
@@ -140,11 +152,15 @@
     },
     {
       "name": "server/claudeSessions.js",
-      "sha256": "837f060e8dff52f861ecc0dc2a4767e7799538aa1196c1ff858b5e829a1141a0"
+      "sha256": "b5ade9e1b14d5a7abefb6e2f2d398064cf2fee87c79dcda1fd2fd63c593e77bc"
+    },
+    {
+      "name": "server/lineFiles.js",
+      "sha256": "95ec13090d3de8ffe9397b55c70bf85957ae04f6643b4c9a2e47efaba6209e7c"
     },
     {
       "name": "server/localSessions.js",
-      "sha256": "079b20b825431a33bde26b40955139a20e13591a2aa0f71725636769d11ed759"
+      "sha256": "0e095b5f9ee94cd3d0ccf790cd7afce91a793de4f370374c7f374f56ac75d41d"
     },
     {
       "name": "server/start.js",
@@ -156,7 +172,7 @@
     },
     {
       "name": "src/App.jsx",
-      "sha256": "1d1e698fc67b5bff6db97a7ab205b72e83b1893cbf7a27a25efccfa47ca39ce5"
+      "sha256": "997b263a32d83307e56a2767d032d9145e83e106bb07c3cf55f7d4798aa7a47d"
     },
     {
       "name": "src/components/BatchReview.jsx",
@@ -164,15 +180,15 @@
     },
     {
       "name": "src/components/BrowserSetup.jsx",
-      "sha256": "bf52adf5ad0ac2043ba09703df3ef783c70ec404452187801101dd99bcd53966"
+      "sha256": "51e2dd92af49464cb72a567b462cd87ae70073cae970a30d5ce862c95ebf7efd"
     },
     {
       "name": "src/components/ExportWorkspace.jsx",
-      "sha256": "56bdf67b2206188542f1272a57c3c986094096a687346c8b04be4310209d263a"
+      "sha256": "0380daf5088447c1f16e32b46847da81e1191b0b6758f941c52e94b42f07f8b6"
     },
     {
       "name": "src/edition.js",
-      "sha256": "721ae666ba3833c34d95d65348c92e4f1ac27c98705f8cc89494db686cf60108"
+      "sha256": "5edeb766559a755cb4523f78288cc80118cc1ca53d94c480ee46e59cb037480d"
     },
     {
       "name": "src/generators/html.js",
@@ -180,7 +196,7 @@
     },
     {
       "name": "src/generators/markdown.js",
-      "sha256": "37e64cb7e146c813cfdb5eaa41e2e7b39040b341bb869da97fd81e8a14d74fb2"
+      "sha256": "4d6aa92e7c1eafc93a30371611b804a1866d77e55ae80fa3e88cfa5a4c02469e"
     },
     {
       "name": "src/index.css",
@@ -196,15 +212,15 @@
     },
     {
       "name": "src/parsers/browserScript.js",
-      "sha256": "517b92820236c7a29a299afeba991c1d386ad14386dae3020881e320dfd9d999"
+      "sha256": "d26e38937a6a66b16831e1c91ae626bc419aeb39925325b57c9777fab3356587"
     },
     {
       "name": "src/parsers/claudeJsonl.js",
-      "sha256": "67399a62511b089a03fe0c7a300d2817b979e674bd5d05cbcaa4c1ce9c96e928"
+      "sha256": "443b204ee1b85cdb4ef6de2c208ed657b86726d9f7e594ff5a407fdca9b91c70"
     },
     {
       "name": "src/parsers/codexJsonl.js",
-      "sha256": "8a3246795f8cb0db0c67f64fda2c1eb7f5c9883e99417e39754fe342ff7a2201"
+      "sha256": "d821b825fb9f94bb49c6a36bb0393bbdbad44e4d46f624e382547695cb4467a2"
     },
     {
       "name": "src/parsers/codexMetadata.js",
@@ -228,7 +244,7 @@
     },
     {
       "name": "src/utils/sessionExport.js",
-      "sha256": "75f54827a0f8d932300ae535f857b893ea496636d8be3b5df140a17f579bb17e"
+      "sha256": "806b6846ae5cf2690c21c6e589341ad163b0cf0874771e36a0a18c6a1a00e07b"
     },
     {
       "name": "src/utils/stripMarkdown.js",
@@ -256,7 +272,7 @@
     },
     {
       "name": "tests/editions.test.js",
-      "sha256": "73b119be58add773558c622a5b221824d5181002ea6d23d885fbe050fe48b4a9"
+      "sha256": "86882b0a0073eb6d0e22c8fb313037865cf74d0ad463f1c2279301df474c8e48"
     },
     {
       "name": "tests/exportReliability.test.js",
@@ -268,11 +284,11 @@
     },
     {
       "name": "tests/extensionMediaSupport.test.js",
-      "sha256": "5df926d8fa171d44ec65899f5cc2d16e9fd4b58befa7b39d765f92e2d2bec1ba"
+      "sha256": "7653649a9263c73748e59ce9d6e57596b4cea77a57f4343d03cca5611fb2c3e6"
     },
     {
       "name": "tests/extensionWindowing.test.js",
-      "sha256": "f6fdca3925ad5b597430a6360b92f7f3cc65e0b63edc98f17985c920ddc1f4f7"
+      "sha256": "8efa087b8f53273ed79eb49665012c4d2dcbc9fb13274a2f817ab07065eeb221"
     },
     {
       "name": "tests/html.test.js",
@@ -280,7 +296,7 @@
     },
     {
       "name": "tests/localSessions.test.js",
-      "sha256": "44b72a47eda4f3a7be4751cdf758a63980293429d9e8747127d07f9364cfcf27"
+      "sha256": "5a27105a60fcbc209edc4d7eb7890a162f7f93e19e54c932d8bcea8326dd987a"
     },
     {
       "name": "tests/localWorkflow.test.js",
@@ -288,15 +304,27 @@
     },
     {
       "name": "tests/markdown.test.js",
-      "sha256": "c7c342b8eb1a4f5862e1bc879e670565bac491eb29a56926634dfe9cb09eff6b"
+      "sha256": "8fe0a0ba40f7ea50a3775f8f8d40689788049e4013b82bc9a8634fe2edd02387"
     },
     {
       "name": "tests/offscreenPackaging.test.js",
-      "sha256": "494438f64b4aeb890c1e0fa157ee3cf4b1d5da328538bb59d1b667ab512fb26d"
+      "sha256": "d7c90bc6ed9b18c7786185b56ad6aabebd3e0a3de0d7aa342ecbc558e41f7e26"
     },
     {
       "name": "tests/opencode.test.js",
       "sha256": "cac5246ba6a7f6f1cd07c4574100213dcca09acd437de73d4212a6de23acb0ca"
+    },
+    {
+      "name": "tests/perplexityBackground.test.js",
+      "sha256": "4b06eebdf27b6b6111e739d660873003a3f0923f1af68aef9287bffe3d262626"
+    },
+    {
+      "name": "tests/privateBrowserAdapters.test.js",
+      "sha256": "0dc610a577cda26783fd1ea7e08737e5d68a72611f30143605d2af9bf2102feb"
+    },
+    {
+      "name": "tests/publicRelease.test.js",
+      "sha256": "d1b3cee4c3012d4499e31e7d6800974543e905c652538c86234b067ee8368fce"
     },
     {
       "name": "tests/stripMarkdown.test.js",

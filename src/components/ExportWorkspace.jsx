@@ -105,7 +105,8 @@ export function ExportWorkspace({ source }) {
         const result = await sessionFiles(session, options, async (attachment, index, signal) => {
           let url = attachment.url;
           const headers = {};
-          if (url.startsWith("file:")) {
+          // file: paths and local: inline data are both held by the local app.
+          if (url.startsWith("file:") || url.startsWith("local:")) {
             if (!local || item.parsed) throw new Error("Use automatic discovery in the local app to read this file");
             url = `/api/local-sessions?${new URLSearchParams({ source, id: item.id, attachment: index })}`;
             headers["X-AI-Exporter"] = "local-sessions";

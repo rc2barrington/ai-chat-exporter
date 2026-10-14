@@ -1,6 +1,10 @@
 // JS logic for AI Chat Exporter Chrome Extension Popup
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Read the version from the manifest so the badge always matches the build
+  // Chrome actually loaded, instead of a hardcoded number that goes stale.
+  const versionBadge = document.getElementById("version-badge");
+  if (versionBadge) versionBadge.textContent = "v" + chrome.runtime.getManifest().version;
   const tabList = document.getElementById("tab-list");
   const exportBtn = document.getElementById("export-btn");
   const cancelBtn = document.getElementById("cancel-btn");

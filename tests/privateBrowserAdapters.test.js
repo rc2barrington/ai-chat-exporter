@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import { Buffer } from 'node:buffer';
 import { parseHTML } from 'linkedom';
 import { describe, it, expect, vi } from 'vitest';
-import { publicFile } from '../scripts/publicFiles.js';
+import { toPublicFile as publicFile } from '../scripts/publicFiles.js';
 
 const source = readFileSync(new URL('../chrome-extension/privateBrowserAdapters.js', import.meta.url), 'utf8');
 const context = { URL, setTimeout: (...args) => setTimeout(...args), clearTimeout: id => clearTimeout(id),

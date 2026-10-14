@@ -25,7 +25,17 @@ import { attachmentText } from "./attachments.js";
 import { codexFallbackTitle, isInternalCodexSession } from "./codexMetadata.js";
 
 export function parseCodexJsonl(fileContent, opts = {}) {
-  const lines = String(fileContent || "").split("\n");
+  const parser = createCodexParser(opts);
+  for (const line of String(fileContent || "").split("\n")) parser.push(line);
+  return parser.finish();
+}
+
+// Line-at-a-time core. The local app streams rollout files through push(), so
+// a session larger than JavaScript's maximum string length (one real session
+// here is 590 MB, mostly inline screenshots) can still be exported. When
+// opts.storeAttachment is given, each attachment record passes through it as
+// soon as it is parsed, letting the caller move inline data out of the record.
+export function createCodexParser(opts = {}) {
   const messages = [];
   const attachments = [];
   const warnings = [];
@@ -53,15 +63,24 @@ export function parseCodexJsonl(fileContent, opts = {}) {
     if (ts) currentTurn.timestamp = ts;
   };
 
-  for (const [lineIndex, rawLine] of lines.entries()) {
+  let lineIndex = 0;
+  const store = (content) => {
+    const before = attachments.length;
+    const text = collectText(content, attachments);
+    if (opts.storeAttachment) for (let i = before; i < attachments.length; i++) attachments[i] = opts.storeAttachment(attachments[i]);
+    return text;
+  };
+
+  function push(rawLine) {
+    lineIndex++;
     const line = rawLine.trim();
-    if (!line) continue;
+    if (!line) return;
     let obj;
     try {
       obj = JSON.parse(line);
     } catch {
-      warnings.push(`Source record ${lineIndex + 1} could not be parsed. Its contents are not included in this export.`);
-      continue;
+      warnings.push(`Source record ${lineIndex} could not be parsed. Its contents are not included in this export.`);
+      return;
     }
 
     noteTimestamp(obj.timestamp);
@@ -69,17 +88,17 @@ export function parseCodexJsonl(fileContent, opts = {}) {
     if (obj.type === "session_meta" && obj.payload && !meta) {
       meta = obj.payload;
       noteTimestamp(obj.payload.timestamp);
-      continue;
+      return;
     }
 
-    if (obj.type !== "response_item") continue;
+    if (obj.type !== "response_item") return;
     const p = obj.payload;
-    if (!p || typeof p !== "object") continue;
+    if (!p || typeof p !== "object") return;
 
     switch (p.type) {
       case "message": {
         if (!["user", "assistant"].includes(p.role)) break; // injected instructions
-        const text = collectText(p.content, attachments);
+        const text = store(p.content);
         if (p.role === "user") {
           const cleaned = cleanUserText(text);
           if (!cleaned) break; // pure scaffolding turn
@@ -125,7 +144,7 @@ export function parseCodexJsonl(fileContent, opts = {}) {
 
       case "custom_tool_call_output":
       case "function_call_output": {
-        const out = collectText(p.output, attachments);
+        const out = store(p.output);
         pushAssistant(
           { type: "tool_result", tool_use_id: p.call_id, content: out, is_error: false },
           obj.timestamp
@@ -138,6 +157,7 @@ export function parseCodexJsonl(fileContent, opts = {}) {
     }
   }
 
+  function finish() {
   const startedAt = firstTimestamp ? new Date(firstTimestamp).toISOString() : "";
   const endedAt = lastTimestamp ? new Date(lastTimestamp).toISOString() : "";
   const date = startedAt ? new Date(startedAt).toLocaleString() : "";
@@ -155,6 +175,9 @@ export function parseCodexJsonl(fileContent, opts = {}) {
     warnings,
     source: "Codex",
   };
+  }
+
+  return { push, finish };
 }
 
 function collectText(content, attachments) {

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { describe, expect, it, afterEach } from "vitest";
 import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -36,9 +37,42 @@ describe("local discovery", () => {
     const root = await mkdtemp(path.join(tmpdir(), "exporter-index-test-")); tempPaths.push(root);
     await mkdir(path.join(root, "sessions"));
     const id = "00000000-0000-0000-0000-000000000001";
-    await writeFile(path.join(root, "sessions", `rollout-${id}.jsonl`), "{}");
+    await writeFile(path.join(root, "sessions", `rollout-${id}.jsonl`), JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Hi" }] } }));
     await writeFile(path.join(root, "session_index.jsonl"), ["Old name", "Current name"].map(thread_name => JSON.stringify({ id, thread_name })).join("\n"));
     expect((await createLocalSessions({ codexHome: root }).list("codex"))[0].title).toBe("Current name");
+  });
+
+  it("hides Codex sessions that ended before any message was sent", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "exporter-empty-test-")); tempPaths.push(root);
+    await mkdir(path.join(root, "sessions"));
+    const empty = "00000000-0000-0000-0000-00000000000e", real = "00000000-0000-0000-0000-00000000000f";
+    await writeFile(path.join(root, "sessions", `rollout-${empty}.jsonl`), [
+      { type: "session_meta", payload: { id: empty } },
+      { type: "response_item", payload: { type: "message", role: "developer", content: [{ type: "input_text", text: "instructions" }] } },
+      { type: "event_msg", payload: { type: "turn_aborted" } },
+    ].map(JSON.stringify).join("\n"));
+    await writeFile(path.join(root, "sessions", `rollout-${real}.jsonl`), JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Hi" }] } }));
+    expect((await createLocalSessions({ codexHome: root }).list("codex")).map(s => s.id)).toEqual([real]);
+  });
+
+  it("serves inline images from the local app instead of sending them inside the session", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "exporter-inline-test-")); tempPaths.push(root);
+    await mkdir(path.join(root, "sessions"));
+    const id = "00000000-0000-0000-0000-00000000001a";
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+    await writeFile(path.join(root, "sessions", `rollout-${id}.jsonl`), [
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Look" }] } },
+      { type: "response_item", payload: { type: "custom_tool_call_output", call_id: "c", output: [{ type: "input_image", image_url: "data:image/png;base64," + png.toString("base64") }] } },
+    ].map(JSON.stringify).join("\n"));
+    const store = createLocalSessions({ codexHome: root });
+    await store.list("codex");
+    const session = await store.get("codex", id);
+    expect(session.attachments).toHaveLength(1);
+    expect(session.attachments[0].url).toBe("local:0");
+    expect(JSON.stringify(session)).not.toContain("base64");
+    const file = await store.attachment("codex", id, 0);
+    expect(Buffer.compare(file.bytes, png)).toBe(0);
+    expect(file.type).toBe("image/png");
   });
 
   it("lists OpenCode parent conversations without presenting subagents as separate chats", async () => {

@@ -4,11 +4,13 @@ Save browser conversations and local coding sessions as readable Markdown, with 
 
 ## Editions
 
-This checkout is the **public edition**, with Codex and Claude Code. It runs on your computer at port 4179.
+<!-- edition:start -->
+This checkout is the **public edition**. Its local app reads Codex and Claude Code, and runs on your computer at port 4179.
+
+The private edition reads Codex, Claude Code and OpenCode at port 4178. Both editions include the same browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google AI Mode, Muse and Perplexity.
 
 **[Open the website](https://rc2barrington.github.io/ai-chat-exporter/)**
-
-The public edition provides Codex and Claude Code at port 4179. Both editions include ChatGPT web, Grok web, Gemini web, Claude web, Google AI Overviews, Google AI Mode, Muse, and Perplexity browser exports.
+<!-- edition:end -->
 
 Edition selection is defined in `src/edition.js` and enforced in both the interface and local API. The source is shared; disabled providers cannot be discovered or exported through that edition's API. The public repository starts with new Git history and contains no private repository history.
 
@@ -33,7 +35,8 @@ The local app opens directly to Codex and automatically lists saved chats. Choos
 - Codex: discovers `sessions` and `archived_sessions` under `$CODEX_HOME`, defaulting to `~/.codex`. Uses the state database's sidebar `name`, not the prompt stored in `title`. Falls back to the latest session-index name. Internal reviews and subagents are excluded from the main list, and copies of the same session are not listed twice. Parses the rollout message stream once, excluding mirrored UI events and injected system/developer instructions.
 - OpenCode: reads `$XDG_DATA_HOME/opencode/opencode.db`, defaulting to `~/.local/share/opencode/opencode.db`, in read-only transactions. Includes text, saved reasoning, file parts, tool calls and results; excludes reverted tail messages.
 - Manual file import is optional: Codex `.jsonl` rollouts or OpenCode `.json` exports. Imported files stay in your browser. Rollouts often do not contain sidebar names: use automatic discovery for named chats, or include `session_index.jsonl` in the import. Missing names use a date label, never the opening prompt. To copy local `file:` attachments, use automatic discovery in the local app.
-- Claude Code (public edition): discovers top-level project `.jsonl` sessions under `$CLAUDE_CONFIG_DIR`, defaulting to `~/.claude/projects`. Uses custom titles, generated titles, or session-index summaries rather than the first prompt. Subagent directories and symlinks are excluded. Preserves saved text, readable reasoning, tool results, and embedded image/document attachments. Manual `.jsonl` import is also available.
+- Claude Code: discovers top-level project `.jsonl` sessions under `$CLAUDE_CONFIG_DIR`, defaulting to `~/.claude/projects`. Uses custom titles, generated titles, or session-index summaries rather than the first prompt. Subagent directories and symlinks are excluded. Preserves saved text, readable reasoning, tool results, and embedded image/document attachments. Manual `.jsonl` import is also available.
+- Very large sessions: the local app reads saved logs line by line, so a session bigger than JavaScript's maximum string length (one real Codex session here is 590 MB) still opens. Inline images stay in the local app and are fetched individually during export instead of being sent to the page inside the session. Sessions that ended before any message was sent are not listed.
 
 ## Export behavior
 
@@ -90,7 +93,17 @@ Please report issues with the exporter version, provider and redacted log. Do no
 
 ## Maintaining the split
 
-Make shared fixes in the private source checkout and run the tests. `node scripts/public-snapshot.js /absolute/path/to/new-directory` creates a new, audited public snapshot from an explicit source allowlist. It does not copy `.git`, local agent settings, browser profiles, downloads, or user conversations. Review that snapshot before publishing. For later public updates, transfer reviewed file changes only, never merge or push private Git history into the public repository.
+The private checkout is the only place to make changes. The public repository is generated from it and never edited by hand.
+
+1. Make and commit the change here, with `npm test` passing.
+2. Run `npm run release:public`. It refuses to run while any release file is uncommitted, so every public release matches a private commit. It mirrors the allowlisted files into `../ai-chat-exporter-public`, including deletions, and produces the public `src/edition.js` and README edition section from the `EDITIONS` table. It never copies `.git`, local agent settings, browser profiles, downloads or conversations, and it never commits or pushes.
+3. In the public checkout, run `npm ci`, `npm test` and `npm run build`, review `git diff`, then commit, push, and `npm run deploy`.
+
+Pass an absolute path to a directory that does not exist yet to create a fresh snapshot instead. Never merge or push private Git history into the public repository.
+
+## 1.1.0
+
+The private edition now includes Claude Code alongside Codex and OpenCode. Both editions are defined in one `EDITIONS` table, and `npm run release:public` replaces the manual snapshot copy. Very large local sessions open instead of failing with "Invalid string length", inline images are served by the local app, and empty Codex sessions are no longer listed. The extension popup reads its version from the manifest instead of showing a fixed number.
 
 ## 1.0.4
 
