@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import JSZip from "jszip";
-import { localSources } from "../src/edition.js";
+import { localSources } from "../src/appConfig.js";
 
 // Test the actual shipped Mac archive, outside the repo and without node_modules.
 if (process.platform !== "darwin") { console.log("Mac extraction check is only needed on macOS."); process.exit(0); }

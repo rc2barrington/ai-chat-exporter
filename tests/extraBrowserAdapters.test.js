@@ -3,13 +3,12 @@ import vm from 'node:vm';
 import { Buffer } from 'node:buffer';
 import { parseHTML } from 'linkedom';
 import { describe, it, expect, vi } from 'vitest';
-import { toPublicFile as publicFile } from '../scripts/publicFiles.js';
 
-const source = readFileSync(new URL('../chrome-extension/privateBrowserAdapters.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../chrome-extension/extraBrowserAdapters.js', import.meta.url), 'utf8');
 const context = { URL, setTimeout: (...args) => setTimeout(...args), clearTimeout: id => clearTimeout(id),
   Date: class extends Date { static now() { return Date.now(); } } };
 vm.runInNewContext(source, context);
-const adapter = context.AIChatExporterPrivateAdapters;
+const adapter = context.AIChatExporterExtraAdapters;
 const muse = 'https://muse.ai/thread/example';
 const perplexity = 'https://www.perplexity.ai/search/example';
 const doc = html => parseHTML(`<html><body>${html}</body></html>`).document;
@@ -148,7 +147,7 @@ describe('Muse and Perplexity browser providers', () => {
     expect(result.remoteQueue[0]).toMatchObject({ url: 'https://images.example.test/generated/asset', kind: 'image' });
     expect(result.appendix).toBe('');
   });
-  it('captures lazy and picture-backed images in private browser chats', () => {
+  it('captures lazy and picture-backed images in Muse and Perplexity chats', () => {
     const document = museDoc(message('1','user',
       '<img data-src="https://muse.ai/lazy.png" alt="Lazy">' +
       '<picture><source srcset="https://muse.ai/low.webp 1x, https://muse.ai/high.webp 2x"><img alt="Picture"></picture>'));
@@ -192,7 +191,7 @@ describe('Muse and Perplexity browser providers', () => {
   it('rejects empty and unrelated pages', () => {
     expect(()=>adapter.extract(doc('Sidebar only'),muse)).toThrow(/No Muse messages/);
     expect(()=>adapter.extract(museDoc(message('1','user','First') + message('1','assistant','Duplicate')),muse)).toThrow(/identities or roles changed/);
-    expect(()=>adapter.extract(doc('Home'),'https://example.test')).toThrow(/unavailable/);
+    expect(()=>adapter.extract(doc('Home'),'https://example.test')).toThrow(/not supported/);
   });
   it('cancels during scanning and restores the scroll position', async () => {
     vi.useFakeTimers();
@@ -359,16 +358,16 @@ describe('Muse and Perplexity browser providers', () => {
   });
 });
 
-it('preserves Muse and Perplexity providers and permissions in public snapshots', () => {
+it('ships Muse and Perplexity providers with their permissions', () => {
   const publicContext={ URL };
-  const stub=publicFile('chrome-extension/privateBrowserAdapters.js',Buffer.from(source)).toString();
+  const stub=source;
   vm.runInNewContext(stub,publicContext);
-  expect(publicContext.AIChatExporterPrivateAdapters.names).toEqual(['Muse', 'Perplexity']);
-  expect(publicContext.AIChatExporterPrivateAdapters.siteName(muse)).toBe('Muse');
-  expect(publicContext.AIChatExporterPrivateAdapters.siteName(perplexity)).toBe('Perplexity');
-  expect(typeof publicContext.AIChatExporterPrivateAdapters.exportConversation).toBe('function');
+  expect(publicContext.AIChatExporterExtraAdapters.names).toEqual(['Muse', 'Perplexity']);
+  expect(publicContext.AIChatExporterExtraAdapters.siteName(muse)).toBe('Muse');
+  expect(publicContext.AIChatExporterExtraAdapters.siteName(perplexity)).toBe('Perplexity');
+  expect(typeof publicContext.AIChatExporterExtraAdapters.exportConversation).toBe('function');
   const bytes=readFileSync(new URL('../chrome-extension/manifest.json',import.meta.url));
-  const manifest=JSON.parse(publicFile('chrome-extension/manifest.json',bytes));
+  const manifest=JSON.parse(bytes);
   expect(manifest.host_permissions).toContain('https://muse.ai/*');
   expect(manifest.host_permissions).toContain('https://www.perplexity.ai/*');
   expect(manifest.host_permissions.join(' ')).toMatch(/ppl-ai-file-upload/);

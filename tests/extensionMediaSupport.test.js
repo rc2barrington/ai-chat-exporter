@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { VERSION } from "../src/edition.js";
+import { VERSION } from "../src/appConfig.js";
 
 const readExtension = (name) => readFileSync(
   new URL(`../chrome-extension/${name}`, import.meta.url),

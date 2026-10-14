@@ -94,7 +94,7 @@ document.addEventListener("DOMContentLoaded", () => {
       detectedTabs = tabs.filter(tab => {
         try {
           const url = new URL(tabUrl(tab));
-          return !!globalThis.AIChatExporterPrivateAdapters?.siteName(url.href) || /(^|\.)(chatgpt\.com|chat\.openai\.com|claude\.ai|claude\.com|gemini\.google\.com|grok\.com)$/.test(url.hostname) ||
+          return !!globalThis.AIChatExporterExtraAdapters?.siteName(url.href) || /(^|\.)(chatgpt\.com|chat\.openai\.com|claude\.ai|claude\.com|gemini\.google\.com|grok\.com)$/.test(url.hostname) ||
             (/^(www\.)?google\.com$/.test(url.hostname) && /^\/(search|aimode)\/?$/.test(url.pathname));
         } catch { return false; }
       });
@@ -155,8 +155,8 @@ document.addEventListener("DOMContentLoaded", () => {
         let siteClass = "site-chatgpt";
         let siteLabel = "ChatGPT";
         const url = (tab.url || tab.pendingUrl || "").toLowerCase();
-        if (globalThis.AIChatExporterPrivateAdapters?.siteName(url)) {
-          siteLabel = globalThis.AIChatExporterPrivateAdapters.siteName(url);
+        if (globalThis.AIChatExporterExtraAdapters?.siteName(url)) {
+          siteLabel = globalThis.AIChatExporterExtraAdapters.siteName(url);
           siteClass = "site-gemini";
         } else if (url.includes("claude.ai") || url.includes("claude.com")) {
           siteClass = "site-claude";

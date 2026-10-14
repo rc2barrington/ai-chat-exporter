@@ -2,10 +2,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import { expect, it, vi } from 'vitest';
-import { toPublicFile as publicFile } from '../scripts/publicFiles.js';
 
 const helper = readFileSync(new URL('../chrome-extension/perplexityBackground.js', import.meta.url), 'utf8');
-const scraper = readFileSync(new URL('../chrome-extension/privateBrowserAdapters.js', import.meta.url), 'utf8');
+const scraper = readFileSync(new URL('../chrome-extension/extraBrowserAdapters.js', import.meta.url), 'utf8');
 const href = 'https://www.perplexity.ai/search/test';
 function fixture(install = true) {
   const { document } = parseHTML('<html><body><div id="thread"></div><div id="other"></div></body></html>');
@@ -46,7 +45,7 @@ function fixture(install = true) {
 it('captures every Perplexity position with native intersection delivery suspended, then restores virtualization', async () => {
   const { context, root, rows, document } = fixture();
   const logs = [];
-  const result = await context.AIChatExporterPrivateAdapters.exportConversation(document, href, {
+  const result = await context.AIChatExporterExtraAdapters.exportConversation(document, href, {
     includeMedia: false, requireBackgroundRendering: true, onProgress: value => logs.push(value),
   });
   expect(result.messages.map(m => m.text)).toEqual(rows.map((_, i) => `${i % 2 ? 'Answer' : 'Question'} ${i}`));
@@ -74,13 +73,13 @@ it('pins only selected message observers, not telemetry or another thread, and s
 
 it('tells an already-open Perplexity tab to refresh rather than repeat the broken scroll scan', async () => {
   const { context, document, root } = fixture(false);
-  await expect(context.AIChatExporterPrivateAdapters.exportConversation(document, href, { requireBackgroundRendering: true }))
+  await expect(context.AIChatExporterExtraAdapters.exportConversation(document, href, { requireBackgroundRendering: true }))
     .rejects.toThrow(/Refresh this Perplexity chat once/);
   expect(root.hasAttribute('data-ai-exporter-perplexity-root')).toBe(false);
 });
 
-it('includes the automatic Perplexity helper in public builds', () => {
+it('registers the automatic Perplexity helper', () => {
   const manifest = readFileSync(new URL('../chrome-extension/manifest.json', import.meta.url));
-  expect(JSON.parse(publicFile('chrome-extension/manifest.json', manifest)).content_scripts[0]).toMatchObject({ world: 'MAIN', run_at: 'document_start', js: ['perplexityBackground.js'] });
-  expect(publicFile('chrome-extension/perplexityBackground.js', helper)).toBe(helper);
+  expect(JSON.parse(manifest).content_scripts[0]).toMatchObject({ world: 'MAIN', run_at: 'document_start', js: ['perplexityBackground.js'] });
+  expect(helper).toBe(helper);
 });

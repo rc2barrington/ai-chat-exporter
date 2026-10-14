@@ -5,10 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { createLocalSessions as createStore, localSessionsMiddleware as createMiddleware } from "../server/localSessions.js";
-// These fixtures exercise the private edition regardless of the distribution.
-const createLocalSessions = options => createStore({ ...options, edition: "private" });
-const localSessionsMiddleware = store => createMiddleware(store, "private");
+import { createLocalSessions, localSessionsMiddleware } from "../server/localSessions.js";
 
 const tempPaths = [];
 afterEach(async () => { for (const dir of tempPaths.splice(0)) await rm(dir, { recursive: true, force: true }); });

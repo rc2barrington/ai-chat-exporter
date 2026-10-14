@@ -1,4 +1,4 @@
-// Both editions, MAIN world, document_start. Register before Perplexity
+// MAIN world, document_start. Register before Perplexity
 // creates its observers: native intersection callbacks stop in hidden tabs.
 // No conversation data is read here. Only selected message rows are pinned.
 (() => {
