@@ -84,6 +84,16 @@ function localDate(d = new Date()) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
 }
 
+// Exports are kept together in Downloads/AI Chat Exports, one folder per app,
+// instead of being scattered across Downloads.
+const EXPORT_ROOT = "AI Chat Exports";
+function appFolder(siteName) {
+  const name = String(siteName || "");
+  if (/^Claude/.test(name)) return "Claude";
+  if (/^Google AI/.test(name)) return "Google AI";
+  return name.replace(/[^\w .-]+/g, "").trim() || "Other";
+}
+
 // Build the markdown file contents
 
 async function buildMarkdown(data, signal) {
@@ -91,6 +101,8 @@ async function buildMarkdown(data, signal) {
   let md = '---' + nl;
   md += 'title: ' + JSON.stringify(data.title) + nl;
   md += 'source: ' + data.siteName + nl;
+  // Where the chat lives, so it can be found and exported again later.
+  if (data.sourceUrl) md += 'source_url: ' + JSON.stringify(data.sourceUrl) + nl;
   if (data.exporterVersion) md += 'exporter_version: ' + JSON.stringify(data.exporterVersion) + nl;
   md += 'exported_at: ' + data.date + nl;
   md += 'message_count: ' + data.messageCount + nl;
@@ -146,7 +158,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     };
     activePackaging = packaging;
 
-    Promise.resolve().then(() => processSessionDownload(request.transferId ? transfers.take(request.transferId) : request.data, request.options, packaging.controller.signal))
+    Promise.resolve().then(() => {
+      const data = request.transferId ? transfers.take(request.transferId) : request.data;
+      if (data && /^https?:\/\//.test(request.sourceUrl || "")) data.sourceUrl = request.sourceUrl;
+      return processSessionDownload(data, request.options, packaging.controller.signal);
+    })
       .then(resData => {
         throwIfPackagingCancelled(packaging.controller.signal);
         sendResponse({
@@ -162,7 +178,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           sendResponse({ status: "cancelled", error: "Export cancelled." });
           return;
         }
-        console.error("Zip error:", err);
+        console.error("Packaging error:", err);
         logProgress(`Failed to generate package: ${err.message}`, "error");
         sendResponse({ status: "error", error: err.message });
       })
@@ -342,7 +358,7 @@ async function processSessionDownload(data, options, signal) {
       }
     }
     throwIfPackagingCancelled(signal);
-    return { folder: `${safeTitle}-${stamp}`, files };
+    return { folder: `${EXPORT_ROOT}/${appFolder(data.siteName)}/${safeTitle}-${stamp}`, files };
 
   } else {
     // No media, save as pure Markdown through an object URL too. Keeping the
@@ -353,6 +369,6 @@ async function processSessionDownload(data, options, signal) {
     const downloadUrl = URL.createObjectURL(mdBlob);
     logProgress(`Generated markdown file.`, "info");
 
-    return { downloadUrl, filename: `${safeTitle}.md` };
+    return { downloadUrl, filename: `${EXPORT_ROOT}/${appFolder(data.siteName)}/${safeTitle}.md` };
   }
 }

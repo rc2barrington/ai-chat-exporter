@@ -13,7 +13,9 @@ export async function sessionFiles(session, options, loadAttachment, signal) {
     try {
       const blob = await loadAttachment(attachment, index, signal);
       if (!blob.size) throw new Error("Empty attachment");
-      const label = attachment.label.replace(/[\\/:*?"<>|\p{Cc}]/gu, "-").replace(/^\.+/, "").slice(-180) || "attachment";
+      // A label can be a full path, such as a screenshot's temporary file.
+      // Name the saved copy after the file itself.
+      const label = attachment.label.split(/[\\/]/).filter(Boolean).pop()?.replace(/[:*?"<>|\p{Cc}]/gu, "-").replace(/^\.+/, "").slice(-180) || "attachment";
       const filename = `${index + 1}-${label}`;
       saved.push({ filename, blob, type: attachment.image ? "image/unknown" : attachment.mime });
       messages[0].text = messages[0].text.replaceAll(`(attachment:${index})`, `(<media/${filename}>)`);

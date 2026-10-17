@@ -1703,7 +1703,8 @@ async function runBatchExport(targetTabs, options, runId, signal) {
               action: "zipAndDownload",
               transferId: response.transferId,
               options: options,
-              runId: runId
+              runId: runId,
+              sourceUrl: tabObj && (tabObj.url || tabObj.pendingUrl) || discoveredUrl
             }, (res) => {
               if (chrome.runtime.lastError) {
                 finish(reject, new Error(chrome.runtime.lastError.message));
