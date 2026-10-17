@@ -32,15 +32,15 @@ The local app opens directly to Codex and automatically lists saved chats. Choos
 
 ## Export behavior
 
-- No attachment files saved: a plain `.md` file, no empty media folder or ZIP.
-- Attachments saved: a ZIP containing a chat-named Markdown file (for example `my-chat.md`) and `media/`. The Markdown filename is the same with or without attachments. Only files the Markdown links to are saved, so images inside hidden tool output are left out.
-- Multiple local chats: one ZIP with a separate folder for each conversation.
+- No attachment files saved: a plain `.md` file, no empty media folder.
+- Attachments saved: a folder in Downloads named after the chat, holding a chat-named Markdown file (for example `my-chat.md`) and `media/`. No ZIP files. The extension names the folder with the local date (`my-chat-2026-10-17`); if a folder of that name already holds an export of the chat, it uses `my-chat-2026-10-17 (2)` rather than mixing files. Only files the Markdown links to are saved, so images inside hidden tool output are left out.
+- Local app: each chat is saved straight into Downloads by the local app itself, as a Markdown file or a chat folder, never overwriting an existing one. Multiple chats are saved side by side. The website's manual import asks once for a folder to save into (Chrome's folder access); browsers without it get a ZIP.
 - Exact duplicate images: one saved copy per conversation. SHA-256 groups candidates, then their bytes are compared. Different encodings and similar-looking images remain separate. Every occurrence still links to the retained image.
 - Batch export requires two separate confirmations of the selected chat names. The extension worker validates the confirmed selection snapshot too.
 - Message text and tool output are not truncated by the current interface. The parser cannot undo truncation already present in a provider's saved records.
 - Cancel stops active requests and prevents further downloads. It does not delete files already downloaded.
 - Unavailable attachments are identified in the conversation and status display. No separate error-log file is generated.
-- All ZIP entries, including automatically created folders, receive the current local modification time. ZIP timestamps have two-second precision. Archive filenames use the local date.
+- Saved files carry the time of the export. Folder names use the local date. The ZIP fallback stamps every entry with the current local time (two-second precision).
 
 ## Completeness and limits
 
@@ -82,6 +82,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.6
+
+No more ZIP files. A chat with attachments is saved as a folder in Downloads, its Markdown plus `media/`, ready to open in Finder. The extension writes each file into the folder itself, and the local app's own server saves into Downloads, so exports from both appear as folders. The extension no longer ships JSZip. The website's manual import uses Chrome's folder access and falls back to a ZIP only in browsers without it.
 
 ## 1.2.5
 

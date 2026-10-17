@@ -32,6 +32,14 @@ describe("Chrome extension export isolation", () => {
     expect(background).not.toContain(forbiddenCall);
   });
 
+  it("saves a chat with attachments as a folder, not a ZIP, without mixing it into an existing folder", () => {
+    expect(background).toContain("await saveDownload(markdown.url, `${folder}/${markdown.path}`, signal)");
+    expect(background).toContain("await saveDownload(file.url, `${folder}/${file.path}`, signal)");
+    expect(background).toContain("await removeSavedDownload(item.id)");
+    expect(background).toContain('conflictAction: "uniquify"');
+    expect(background).not.toContain(".zip");
+  });
+
   it("reloads a tab Chrome unloaded to save memory in place before exporting it", () => {
     expect(background).toContain('tabObj.discarded || tabObj.status === "unloaded"');
     expect(background).toContain("tabObj = await reloadUnloadedTab(tabId, signal)");

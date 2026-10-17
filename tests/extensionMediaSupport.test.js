@@ -106,16 +106,18 @@ describe("extension media completeness", () => {
     expect(offscreen).not.toContain("chatgpt_history_root_reached:");
   });
 
-  it("keeps large archives out of extension messages and bounds media fetches", () => {
-    expect(offscreen).toContain("URL.createObjectURL(zipBlob)");
+  it("keeps large exports out of extension messages and bounds media fetches", () => {
+    expect(offscreen).toContain("url: URL.createObjectURL(blob)");
     expect(offscreen).toContain("URL.createObjectURL(mdBlob)");
+    expect(offscreen).not.toContain("JSZip");
     expect(offscreen).toContain("REMOTE_MEDIA_CONCURRENCY = 4");
     expect(offscreen).toContain("REMOTE_MEDIA_TIMEOUT_MS = 60 * 1000");
     expect(offscreen).toContain("media.blob instanceof Blob");
     expect(offscreen).not.toContain("reader.readAsDataURL(zipBlob)");
     expect(offscreen).not.toContain("reader.readAsDataURL(mdBlob)");
     expect(background).toContain("offscreenResponse.downloadUrl || offscreenResponse.dataUrl");
-    expect(background).toContain('{ action: "revokeBlobUrl", url: packagedUrl }');
+    expect(background).toContain('{ action: "revokeBlobUrl", url }');
+    expect(background).toContain("for (const file of folderFiles) await revokeOffscreenUrl(file.url)");
     expect(background).toContain("reasons: ['DOM_PARSER', 'BLOBS']");
   });
 
