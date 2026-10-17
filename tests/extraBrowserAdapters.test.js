@@ -247,6 +247,56 @@ describe('Muse and Perplexity browser providers', () => {
       vi.useRealTimers();
     }
   });
+  // Long Muse chats mount only a window of messages. At the top the newest
+  // messages are absent, so they appear only as the sweep moves down. A real
+  // 174-message chat failed because those were treated as a changed chat.
+  const museWindowedFeed = (total, windowSize) => {
+    const document = doc(`<div id="feed"><div aria-label="Chat messages"></div></div>`);
+    const feed = document.querySelector('#feed');
+    const list = feed.querySelector('[aria-label="Chat messages"]');
+    const max = (total - 1) * 100;
+    let position = 0;
+    const update = () => {
+      const start = Math.min(total - windowSize, Math.max(0, Math.round((position + max) / 100)));
+      list.innerHTML = Array.from({ length: windowSize }, (_, i) => start + i).map(i => message(`m${i}`, i % 2 ? 'assistant' : 'user', `<p>Message ${i}</p>`)).join('');
+    };
+    Object.defineProperty(feed, 'scrollHeight', { get: () => max + 100 });
+    Object.defineProperty(feed, 'clientHeight', { get: () => 100 });
+    Object.defineProperty(feed, 'scrollTop', { get: () => position, set: value => { position = Math.max(-max, Math.min(0, value)); update(); } });
+    update();
+    return { document, feed };
+  };
+  it('exports a long Muse chat whose newest messages are unloaded at the top', async () => {
+    vi.useFakeTimers();
+    const { document, feed } = museWindowedFeed(12, 5);
+    const previousStyle = document.defaultView.getComputedStyle;
+    document.defaultView.getComputedStyle = node => ({ overflowY: node === feed ? 'auto' : 'visible' });
+    try {
+      const pending = adapter.exportConversation(document, muse, { includeMedia: false });
+      await vi.runAllTimersAsync();
+      const result = await pending;
+      expect(result.messages.map(m => m.text)).toEqual(Array.from({ length: 12 }, (_, i) => `Message ${i}`));
+      expect(result.messages[0].role).toMatch(/You/);
+    } finally {
+      document.defaultView.getComputedStyle = previousStyle;
+      vi.useRealTimers();
+    }
+  });
+  it('refuses a Muse export when the scroll skips past part of the chat', async () => {
+    vi.useFakeTimers();
+    const { document, feed } = museWindowedFeed(12, 1);
+    const previousStyle = document.defaultView.getComputedStyle;
+    document.defaultView.getComputedStyle = node => ({ overflowY: node === feed ? 'auto' : 'visible' });
+    try {
+      const pending = adapter.exportConversation(document, muse, { includeMedia: false });
+      const assertion = expect(pending).rejects.toThrow(/skipped part of the conversation/);
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      document.defaultView.getComputedStyle = previousStyle;
+      vi.useRealTimers();
+    }
+  });
   it('reassembles Perplexity virtual rows without omitting the first question', async () => {
     vi.useFakeTimers();
     const document = doc(`<div id="feed">${virtualRows(...Array(6).fill(''))}</div>`);

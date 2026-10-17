@@ -336,10 +336,30 @@ globalThis.AIChatExporterExtraAdapters = (() => {
     const original = scroll.scrollTop, originalAtBottom = original + scroll.clientHeight >= scroll.scrollHeight - 2, captured = new Map();
     let expectedKeys = [], expectedKeySet = new Set();
     const scanEntries = () => entries(doc, href, { allowPlaceholders: true, root: threadRoot });
+    // Muse mounts only a window of a long chat (about 110 messages). At the
+    // top, the newest messages are not in the page at all, so the message list
+    // cannot be read in one go. Instead each mounted window is joined onto the
+    // list as the sweep moves down. Windows overlap because each scroll step is
+    // shorter than the viewport, so a window that shares no message with the
+    // list means part of the chat was skipped.
+    let museGap = false;
+    const mergeMuseWindow = keys => {
+      const anchor = keys.findIndex(key => expectedKeySet.has(key));
+      if (anchor < 0) { if (keys.length) museGap = true; return; }
+      const before = keys.slice(0, anchor).filter(key => !expectedKeySet.has(key));
+      expectedKeys.splice(expectedKeys.indexOf(keys[anchor]), 0, ...before);
+      for (const key of before) expectedKeySet.add(key);
+      for (let i = anchor + 1; i < keys.length; i++) {
+        if (expectedKeySet.has(keys[i])) continue;
+        expectedKeys.splice(expectedKeys.indexOf(keys[i - 1]) + 1, 0, keys[i]);
+        expectedKeySet.add(keys[i]);
+      }
+    };
     const capture = () => {
       const current = scanEntries();
       const keys = current.map(item => item.key);
-      if (expectedKeys.length && (keys.length > expectedKeys.length || keys.some(key => !expectedKeySet.has(key)))) throw new Error(`${provider} changed the conversation while it was being exported. Retry after the chat is stable.`);
+      if (provider === 'Muse' && expectedKeys.length) mergeMuseWindow(keys);
+      else if (expectedKeys.length && (keys.length > expectedKeys.length || keys.some(key => !expectedKeySet.has(key)))) throw new Error(`${provider} changed the conversation while it was being exported. Retry after the chat is stable.`);
       for (const item of current) {
         const previous = captured.get(item.key);
         if (!previous || !item.surrogate) captured.set(item.key, { ...item, node: item.node.cloneNode(true) });
@@ -466,6 +486,7 @@ globalThis.AIChatExporterExtraAdapters = (() => {
         }
         progress(`Perplexity targeted scan captured ${captured.size}/${expectedKeys.length} message positions.`);
       }
+      if (museGap) throw new Error('Muse skipped part of the conversation while scrolling. No partial conversation was saved.');
       const missing = expectedKeys.filter(key => !captured.has(key));
       if (missing.length) throw new Error(`${provider} did not render ${missing.length} of ${expectedKeys.length} messages (scroll viewport ${Math.round(scroll.clientHeight)}px, content ${Math.round(scroll.scrollHeight)}px, position ${Math.round(scroll.scrollTop)}px). No partial conversation was saved.`);
       if (provider === 'Muse') {
