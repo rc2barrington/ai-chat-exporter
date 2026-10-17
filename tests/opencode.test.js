@@ -19,3 +19,18 @@ it("excludes the reverted tail of the active OpenCode conversation", () => {
 });
 
 it("rejects unrelated JSON", () => { expect(() => parseOpenCode("{}")).toThrow(/Not an OpenCode/); });
+
+it("names the model behind each OpenCode reply, including a switch partway through", () => {
+  const reply = (id, modelID, text) => ({ info: { id, role: "assistant", providerID: "opencode-go", modelID }, parts: [{ type: "text", text }] });
+  const session = parseOpenCode({ info: { title: "Models" }, messages: [
+    { info: { id: "1", role: "user", model: { providerID: "opencode-go", modelID: "kimi-k3" } }, parts: [{ type: "text", text: "Hi" }] },
+    reply("2", "kimi-k3", "First"), reply("3", "glm-5.3", "Second"), reply("4", "kimi-k3", "Third"),
+    { info: { id: "5", role: "assistant" }, parts: [{ type: "text", text: "Older reply without a model" }] },
+  ] });
+  expect(session.messages.map(m => m.role)).toEqual(["## You", "## OpenCode (kimi-k3)", "## OpenCode (glm-5.3)", "## OpenCode (kimi-k3)", "## OpenCode"]);
+  expect(session.models).toEqual(["kimi-k3", "glm-5.3"]);
+  const md = generateMarkdown(session, { frontmatter: true });
+  expect(md).toContain('models: ["kimi-k3", "glm-5.3"]');
+  expect(md).toContain("## OpenCode (glm-5.3)\n\nSecond");
+  expect(generateMarkdown(session, { repliesOnly: true })).not.toContain("Hi");
+});

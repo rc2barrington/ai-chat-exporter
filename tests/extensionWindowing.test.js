@@ -32,6 +32,12 @@ describe("Chrome extension export isolation", () => {
     expect(background).not.toContain(forbiddenCall);
   });
 
+  it("reloads a tab Chrome unloaded to save memory in place before exporting it", () => {
+    expect(background).toContain('tabObj.discarded || tabObj.status === "unloaded"');
+    expect(background).toContain("tabObj = await reloadUnloadedTab(tabId, signal)");
+    expect(background).toContain("await chrome.tabs.reload(tabId)");
+  });
+
   it("has no aggregate deadline on scraping, packaging, or download", () => {
     expect(background).not.toContain("Export timed out after 15 minutes.");
     expect(background).not.toContain("Packaging timed out after 30 minutes.");

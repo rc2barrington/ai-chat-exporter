@@ -155,7 +155,7 @@ export function ExportWorkspace({ source }) {
         <label className="select-visible"><input type="checkbox" disabled={!!busy} checked={visible.length > 0 && visible.every(s => selected.has(s.id))} onChange={e => setSelected(old => { const next = new Set(old); for (const s of visible) if (e.target.checked) next.add(s.id); else next.delete(s.id); return next; })} />Select visible chats</label>
         <div className="chat-list">{visible.map(s => <div className={`chat-row ${selected.has(s.id) ? "selected" : ""}`} key={s.id}>
           <input type="checkbox" aria-label={`Select ${s.title}`} checked={selected.has(s.id)} disabled={!!busy} onChange={() => setSelected(old => { const next = new Set(old); if (next.has(s.id)) next.delete(s.id); else next.add(s.id); return next; })} />
-          <div className="chat-description"><strong>{s.title}</strong><span>{s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : "Imported conversation"}{s.parsed ? ` · ${s.parsed.messages.length} messages` : ""}</span></div>
+          <div className="chat-description"><strong>{s.title}</strong><span>{s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : "Imported conversation"}{s.parsed ? ` · ${s.parsed.messages.length} messages` : ""}{(s.models || s.parsed?.models)?.length ? ` · ${(s.models || s.parsed.models).join(", ")}` : ""}</span></div>
           <button className="text-link" disabled={!!busy} onClick={() => work("Opening preview…", async signal => setPreview(s.parsed || await request(s.id, signal)))}>Preview</button>
         </div>)}{!visible.length && <p className="empty-search">No chats match that search.</p>}</div>
       </>}

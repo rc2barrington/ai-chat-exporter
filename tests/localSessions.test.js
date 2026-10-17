@@ -102,14 +102,16 @@ describe("local discovery", () => {
     db.exec("CREATE TABLE session(id TEXT,title TEXT,time_created INTEGER,time_updated INTEGER,revert TEXT); CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,data TEXT); CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,data TEXT);");
     db.prepare("INSERT INTO session VALUES(?,?,?,?,?)").run("s1", "Test session", 1000, 2000, null);
     for (const [id, role, text, time] of [["m2", "assistant", "Answer", 2], ["m1", "user", "First prompt", 1]]) {
-      db.prepare("INSERT INTO message VALUES(?,?,?,?)").run(id, "s1", time, JSON.stringify({ role }));
+      db.prepare("INSERT INTO message VALUES(?,?,?,?)").run(id, "s1", time, JSON.stringify(role === "assistant" ? { role, providerID: "opencode-go", modelID: "kimi-k2.7-code" } : { role, model: { providerID: "opencode-go", modelID: "kimi-k2.7-code" } }));
       db.prepare("INSERT INTO part VALUES(?,?,?,?,?)").run("p" + id, id, "s1", time, JSON.stringify({ type: "text", text }));
     }
     db.close();
     const store = createLocalSessions({ openCodeHome: root });
-    expect(await store.list("opencode")).toEqual([{ id: "s1", title: "Test session", updatedAt: "1970-01-01T00:00:02.000Z" }]);
+    expect(await store.list("opencode")).toEqual([{ id: "s1", title: "Test session", updatedAt: "1970-01-01T00:00:02.000Z", models: ["kimi-k2.7-code"] }]);
     const parsed = await store.get("opencode", "s1");
     expect(parsed.messages.map(m => m.blocks[0].text)).toEqual(["First prompt", "Answer"]);
+    expect(parsed.messages.map(m => m.role)).toEqual(["## You", "## OpenCode (kimi-k2.7-code)"]);
+    expect(parsed.models).toEqual(["kimi-k2.7-code"]);
     await expect(store.get("opencode", "s1' OR 1=1")).rejects.toThrow(/not found/);
   });
   it("scans only session roots, lists metadata, then reads the selected session", async () => {

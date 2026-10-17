@@ -28,6 +28,7 @@ export function generateMarkdown(session, opts = {}) {
     md += `source: ${yamlString(session.source || "Unknown")}` + NL;
     if (session.startedAt) md += `started_at: ${session.startedAt}` + NL;
     if (session.endedAt) md += `ended_at: ${session.endedAt}` + NL;
+    if (session.models?.length) md += `models: [${session.models.map(yamlString).join(", ")}]` + NL;
     md += `message_count: ${messages.length}` + NL;
     if (repliesOnly) md += `export_scope: ai-replies-only${NL}`;
     md += "---" + NL + NL;
