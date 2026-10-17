@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { zstdCompressSync } from "node:zlib";
 import { createLocalSessions, localSessionsMiddleware } from "../server/localSessions.js";
 
 const tempPaths = [];
@@ -72,6 +73,31 @@ describe("local discovery", () => {
     expect(file.type).toBe("image/png");
   });
 
+  // A long Codex session continues in a new rollout file with the same id.
+  // Reading only one file dropped most of a real chat.
+  it("reads every page of a Codex session, including compressed ones, once each", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "exporter-parts-test-")); tempPaths.push(root);
+    await mkdir(path.join(root, "sessions", "2026", "09", "26"), { recursive: true });
+    await mkdir(path.join(root, "sessions", "2026", "10", "12"), { recursive: true });
+    await mkdir(path.join(root, "archived_sessions"));
+    const id = "00000000-0000-0000-0000-0000000000aa";
+    const user = text => JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } });
+    const first = [JSON.stringify({ type: "session_meta", payload: { id } }), user("First part prompt")].join("\n");
+    const second = [JSON.stringify({ type: "session_meta", payload: { id } }), user("Second part prompt")].join("\n");
+    // Codex compresses older pages as .jsonl.zst.
+    const oldest = [JSON.stringify({ type: "session_meta", payload: { id } }), user("Compressed page prompt")].join("\n");
+    await mkdir(path.join(root, "sessions", "2026", "08", "23"), { recursive: true });
+    await writeFile(path.join(root, "sessions", "2026", "08", "23", `rollout-2026-08-23T17-49-22-${id}.jsonl.zst`), zstdCompressSync(Buffer.from(oldest)));
+    await writeFile(path.join(root, "sessions", "2026", "10", "12", `rollout-2026-10-12T19-45-39-${id}_page2.jsonl`), second);
+    await writeFile(path.join(root, "sessions", "2026", "09", "26", `rollout-2026-09-26T19-54-37-${id}_page1.jsonl`), first);
+    await writeFile(path.join(root, "archived_sessions", `rollout-2026-09-26T19-54-37-${id}_page1.jsonl`), first);
+    await writeFile(path.join(root, "archived_sessions", `rollout-2026-09-26T19-54-37-${id}_page1.jsonl.zst`), zstdCompressSync(Buffer.from(first)));
+    const store = createLocalSessions({ codexHome: root });
+    const list = await store.list("codex");
+    expect(list.map(s => s.id)).toEqual([id]);
+    const session = await store.get("codex", id);
+    expect(session.messages.filter(m => m.role === "## You").map(m => m.blocks[0].text)).toEqual(["Compressed page prompt", "First part prompt", "Second part prompt"]);
+  });
   it("lists OpenCode parent conversations without presenting subagents as separate chats", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "exporter-opencode-parent-test-")); tempPaths.push(root);
     const db = new DatabaseSync(path.join(root, "opencode.db"));

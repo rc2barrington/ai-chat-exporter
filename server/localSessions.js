@@ -70,32 +70,46 @@ export function createLocalSessions({ claudeHome = process.env.CLAUDE_CONFIG_DIR
       }
       for (const [id, name] of indexNames) if (!titles.has(id)) titles.set(id, name);
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    const results = [];
-    const seen = new Set();
+    // A long Codex session continues in new rollout files ("pages") with the
+    // same session id, each named after the time it started. Codex compresses
+    // older pages as .jsonl.zst. Files with the same name in sessions and
+    // archived_sessions, compressed or not, are copies of one page.
+    const sessions = new Map();
     async function walk(dir, root) {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         if (entry.isSymbolicLink()) continue;
         const filename = path.join(dir, entry.name);
         if (entry.isDirectory()) await walk(filename, root);
-        else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
+        else if (entry.isFile() && /\.jsonl(?:\.zst)?$/.test(entry.name)) {
           const sessionID = entry.name.match(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/i)?.[0];
           if (isInternalCodexSession(records.get(sessionID))) continue;
           const id = sessionID || createHash("sha256").update(filename).digest("hex");
-          if (seen.has(id)) continue;
-          seen.add(id);
-          // Sessions aborted before anyone spoke contain no conversation. Listing
-          // them only adds rows that export to an empty file.
-          if (!(await hasCodexConversation(filename))) continue;
           const details = await stat(filename);
-          const title = titles.get(sessionID) || codexFallbackTitle(entry.name);
-          files.set(id, { filename, root, title });
-          results.push({ id, title, updatedAt: details.mtime.toISOString() });
+          if (!sessions.has(id)) sessions.set(id, { sessionID, parts: new Map() });
+          const parts = sessions.get(id).parts;
+          const page = entry.name.replace(/\.zst$/, "");
+          const copy = parts.get(page);
+          // Prefer an uncompressed copy, then the larger one.
+          const plain = !filename.endsWith(".zst");
+          if (!copy || (plain && !copy.plain) || (plain === copy.plain && details.size > copy.size)) parts.set(page, { filename, root, size: details.size, mtime: details.mtime, plain });
         }
       }
     }
     for (const name of ["sessions", "archived_sessions"]) {
       try { const root = await realpath(path.join(codexHome, name)); await walk(root, root); }
       catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    const results = [];
+    for (const [id, { sessionID, parts: byName }] of sessions) {
+      const parts = [...byName.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, part]) => part);
+      // Sessions aborted before anyone spoke contain no conversation. Listing
+      // them only adds rows that export to an empty file.
+      let spoken = false;
+      for (const part of parts) if (await hasCodexConversation(part.filename)) { spoken = true; break; }
+      if (!spoken) continue;
+      const title = titles.get(sessionID) || codexFallbackTitle(path.basename(parts[0].filename).replace(/\.zst$/, ""));
+      files.set(id, { parts, title });
+      results.push({ id, title, updatedAt: new Date(Math.max(...parts.map(part => part.mtime.getTime()))).toISOString() });
     }
     return results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -122,10 +136,12 @@ export function createLocalSessions({ claudeHome = process.env.CLAUDE_CONFIG_DIR
     if (source !== "codex") throw new Error("Unsupported local source.");
     const file = files.get(id);
     if (!file) throw new Error("Scan sessions again before opening this session.");
-    const resolved = await realpath(file.filename);
-    if (!resolved.startsWith(file.root + path.sep)) throw new Error("Session path is outside its storage folder.");
-    const parser = createCodexParser({ fileName: path.basename(resolved), title: file.title, storeAttachment: keep });
-    await forEachLine(resolved, line => { parser.push(line); });
+    const parser = createCodexParser({ fileName: path.basename(file.parts[0].filename).replace(/\.zst$/, ""), title: file.title, storeAttachment: keep });
+    for (const part of file.parts) {
+      const resolved = await realpath(part.filename);
+      if (!resolved.startsWith(part.root + path.sep)) throw new Error("Session path is outside its storage folder.");
+      await forEachLine(resolved, line => { parser.push(line); });
+    }
     return parser.finish();
   }
   async function open(source, id) {
