@@ -115,3 +115,11 @@ it("saves only the attachments the exported Markdown links to", async () => {
   expect(shown.files.map(f => f.filename)).toEqual(["tools.md", "media/1-upload.png", "media/2-screenshot.png"]);
   expect(shown.files[0].content).toContain("(<media/2-screenshot.png>)");
 });
+
+it("names a saved attachment after its file, not the temporary path it was uploaded from", async () => {
+  const session = { title: "Paths", messages: [{ role: "## You", blocks: [{ type: "text", text: "![Shot](attachment:0)" }] }],
+    attachments: [{ label: "/var/folders/zm/T/TemporaryItems/Screenshot 2026-10-16 at 11.22.04 PM.png", image: true, mime: "image/png" }] };
+  const result = await sessionFiles(session, {}, async () => new Blob(["png"], { type: "image/png" }), new AbortController().signal);
+  expect(result.files.map(f => f.filename)).toEqual(["paths.md", "media/1-Screenshot 2026-10-16 at 11.22.04 PM.png"]);
+  expect(result.files[0].content).toContain("(<media/1-Screenshot 2026-10-16 at 11.22.04 PM.png>)");
+});

@@ -162,7 +162,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           sendResponse({ status: "cancelled", error: "Export cancelled." });
           return;
         }
-        console.error("Zip error:", err);
+        console.error("Packaging error:", err);
         logProgress(`Failed to generate package: ${err.message}`, "error");
         sendResponse({ status: "error", error: err.message });
       })
