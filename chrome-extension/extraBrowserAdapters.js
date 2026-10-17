@@ -177,9 +177,9 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       // area beside the message actions. Keep their content, not the action
       // buttons or the hidden "You:" label.
       if (provider === 'Muse' && node.matches('[data-copy-exclude]')) {
-        return [...node.querySelectorAll('button')]
-          .filter(button => !button.parentElement.closest('button') && !button.closest('[aria-hidden="true"],[hidden]'))
-          .map(button => museButton(button, true)).join('');
+        return [...node.querySelectorAll('button, section')]
+          .filter(item => !item.parentElement.closest('button, section') && !item.closest('[aria-hidden="true"],[hidden]'))
+          .map(item => item.tagName === 'SECTION' ? museCard(item) : museButton(item, true)).join('');
       }
       if (node.matches('[data-copy-exclude],[data-message-accessibility-surrogate],[data-workflow-text-footer],[hidden],[aria-hidden="true"],.sr-only') || ['script','style','svg','button','input','textarea'].includes(tag)) return '';
       if (tag === 'img' || tag === 'video' || tag === 'audio') {
@@ -238,13 +238,28 @@ globalThis.AIChatExporterExtraAdapters = (() => {
     // Muse renders much of a message's content as buttons. Message actions
     // (reply, copy, menus, reactions) carry no text of their own, or name an
     // analytics action, and are left out.
+    // A card's own text, quoted so it stands apart from the message.
+    function museCard(node) {
+      const card = [...node.childNodes].map(render).join('').replace(/\n{3,}/g, '\n\n').trim();
+      return card ? `\n\n${card.split('\n').map(line => line ? `> ${line}` : '>').join('\n')}\n\n` : '';
+    }
+    // Text Muse shows in a message, for a widget none of the rules above
+    // know. Action buttons are labelled and carry no text of their own.
+    function museVisibleText(node) {
+      const texts = [];
+      const walker = node.ownerDocument.createTreeWalker(node, 4);
+      for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+        const value = text.textContent.replace(/\s+/g, ' ').trim();
+        if (!value || text.parentElement.closest('[aria-hidden="true"],[hidden],.sr-only,[data-message-accessibility-surrogate],svg,script,style,button[aria-label]')) continue;
+        if (value === 'You:') continue;
+        texts.push(value);
+      }
+      return texts.join('\n\n');
+    }
     function museButton(node, inActions) {
       const action = node.getAttribute('data-pel-click') || '';
       // Idea, shopping and similar cards: a title and description.
-      if (/_(card|row|entity)_click$/.test(action)) {
-        const card = [...node.childNodes].map(render).join('').replace(/\n{3,}/g, '\n\n').trim();
-        return card ? `\n\n${card.split('\n').map(line => line ? `> ${line}` : '>').join('\n')}\n\n` : '';
-      }
+      if (/_(card|row|entity)_click$/.test(action)) return museCard(node);
       // Uploaded, generated and offered images. The label is UI chrome.
       if (node.querySelector('img')) return [...node.querySelectorAll('img')].map(render).join('');
       // A file chip without a preview: its name is the content, as for the
@@ -257,7 +272,8 @@ globalThis.AIChatExporterExtraAdapters = (() => {
     }
     const messages = items.map(item => {
       const fallback = item.node.querySelector('[data-message-accessibility-surrogate]');
-      const text = (fallback ? fallback.textContent.replace(/^(User|Assistant) message:\s*/i, '') : render(item.node)).replace(/\n{3,}/g, '\n\n').trim();
+      let text = (fallback ? fallback.textContent.replace(/^(User|Assistant) message:\s*/i, '') : render(item.node)).replace(/\n{3,}/g, '\n\n').trim();
+      if (!text && provider === 'Muse') text = museVisibleText(item.node);
       if (!text) throw new Error(`${provider} message ${item.key} did not render. No partial export was saved.`);
       return { role: item.role === 'user' ? '## You' : `## ${provider}`, text };
     });

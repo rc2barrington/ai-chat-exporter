@@ -192,6 +192,15 @@ describe('Muse and Perplexity browser providers', () => {
     ]);
     expect(result.remoteQueue.map(item => item.url)).toEqual(['https://muse.ai/one.png', 'https://muse.ai/two.png']);
   });
+  it('keeps Muse section cards and falls back to visible text for an unknown widget', () => {
+    const actions = '<button aria-label="More actions" data-pel-click="chat_message_overflow_open"><svg></svg></button>';
+    const document = museDoc(
+      message('1', 'assistant', `<div data-copy-exclude><section data-pel-impression><div></div><p title="Remind me tomorrow">Remind me tomorrow</p></section>${actions}</div>`) +
+      message('2', 'assistant', `<div data-copy-exclude><div><span>New widget text</span></div>${actions}</div>`) +
+      message('3', 'user', '<div data-copy-exclude>You:</div><p>Thanks</p>'));
+    expect(adapter.extract(document, muse).messages.map(m => m.text)).toEqual(['> Remind me tomorrow', 'New widget text', 'Thanks']);
+    expect(() => adapter.extract(museDoc(message('4', 'assistant', `<div data-copy-exclude>${actions}</div>`)), muse)).toThrow(/did not render/);
+  });
   it('names a Muse export after its page title and leaves out the app\'s bundled icons', () => {
     const document = museDoc(message('1', 'user', 'First line of the prompt') +
       message('2', 'assistant', '<p>Connected.</p><img src="/_next/static/media/connectorGoogleGmail-2x.40ulph8ci18en.png"><img src="https://muse.ai/api/image/real.png" alt="Real">'));

@@ -83,6 +83,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.4
+
+Muse cards drawn as sections, such as reminder cards in side threads, now export instead of failing the chat. If Muse adds a message widget the exporter does not know, the message falls back to the text Muse shows rather than failing the whole export. A message with no text at all still stops the export. Verified by exporting all five Muse side threads and the main chat from background tabs.
+
 ## 1.2.3
 
 Tested end to end in Chrome with real Muse, ChatGPT, Claude.ai, Perplexity and Google AI Overview chats exported together from background tabs.
