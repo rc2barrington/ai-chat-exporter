@@ -11,8 +11,12 @@
 // newer messages after a jump to the top. In a background tab that never
 // happens, so history silently stops loading.
 //
-// While an export is running, this reports every observed message row as
-// intersecting, so all of them render, and reports the history sentinels from
+// Images inside a message are lazier still: each one waits for its own
+// observer (rootMargin "200px") before replacing a skeleton with the picture.
+//
+// While an export is running, this reports every observed message row and
+// every such media loader inside a row as intersecting, so all of them
+// render, and reports the history sentinels from
 // their real position on every scroll and whenever Muse observes one, so pages
 // keep loading exactly as they would on screen. Analytics observers are left
 // untouched. Afterwards it replays the real geometry so Muse can unload
@@ -21,18 +25,25 @@
 // Muse keeps a sentinel observed only while more history exists on its side,
 // so data-ai-exporter-muse-history tells the exporter whether older or newer
 // messages remain ("older", "newer", both, or "complete"). A pause in loading
-// is not mistaken for the start or end of the chat. No conversation data is
-// read here.
+// is not mistaken for the start or end of the chat.
+//
+// A Muse tab that loads while hidden can stay on "Loading chat" until it is
+// shown. Muse's own router refresh finishes that load without navigating, so
+// the exporter can ask for one. No conversation data is read here.
 (() => {
   if (globalThis.__aiExporterMuseObserverBridge || typeof IntersectionObserver !== 'function') return;
   globalThis.__aiExporterMuseObserverBridge = true;
   const NativeObserver = IntersectionObserver;
-  const MARGIN = '1000px';
+  // Message rows use 1000px. Images, video and previews inside a message
+  // load once a 200px observer sees them. Impression analytics use neither.
+  const MARGINS = { '1000px': 1000, '200px': 200 };
   const ROWS = 'data-ai-exporter-muse-rendered-rows';
   const HISTORY = 'data-ai-exporter-muse-history';
   const records = new Set();
   let active = false, publishQueued = false;
-  const isRow = (record, target) => record.margin === MARGIN && target.matches?.('[data-message-item]');
+  const isRow = (record, target) => record.margin === '1000px' && target.matches?.('[data-message-item]');
+  const isPinned = (record, target) => isRow(record, target)
+    || (record.margin === '200px' && !!target.closest?.('[data-message-item]'));
   const chatList = record => record.observer.root instanceof Element
     ? record.observer.root.querySelector('[aria-label="Chat messages"]') : null;
   // History sentinels: an observer rooted at the chat scroll container, with no
@@ -61,9 +72,9 @@
     }
   };
   const pin = record => {
-    const entries = [...record.targets].filter(target => isRow(record, target)).map(target => entryFor(record, target, true));
+    const entries = [...record.targets].filter(target => isPinned(record, target)).map(target => entryFor(record, target, true));
     if (entries.length) record.callback(entries, record.observer);
-    return entries.length;
+    return entries.filter(entry => isRow(record, entry.target)).length;
   };
   const publish = () => {
     publishQueued = false;
@@ -89,7 +100,7 @@
   globalThis.IntersectionObserver = class extends NativeObserver {
     constructor(callback, options) {
       const record = { callback, targets: new Set(), margin: options?.rootMargin, observer: null };
-      super((entries, observer) => callback(entries.map(entry => active && isRow(record, entry.target)
+      super((entries, observer) => callback(entries.map(entry => active && isPinned(record, entry.target)
         ? entryFor(record, entry.target, true) : entry), observer), options);
       record.observer = this;
       this.__exportMuseRecord = record;
@@ -123,8 +134,8 @@
     document.documentElement.removeAttribute(ROWS);
     document.documentElement.removeAttribute(HISTORY);
     for (const record of records) {
-      if (record.margin !== MARGIN) continue;
-      const entries = [...record.targets].filter(target => isRow(record, target)).map(target => measured(record, target, 1000));
+      const entries = [...record.targets].filter(target => isPinned(record, target))
+        .map(target => measured(record, target, MARGINS[record.margin]));
       if (entries.length) record.callback(entries, record.observer);
     }
   };
@@ -140,6 +151,7 @@
   // Scroll events do not bubble, so listen in the capture phase.
   document.addEventListener('scroll', () => reportSentinels(), true);
   document.addEventListener('__aiExporterMuseStop', stop);
+  document.addEventListener('__aiExporterMuseRefresh', () => { try { globalThis.next?.router?.refresh?.(); } catch { /* The wait reports a chat that never loads. */ } });
   document.addEventListener('__exportCancel', stop);
   window.addEventListener('pagehide', stop);
 })();

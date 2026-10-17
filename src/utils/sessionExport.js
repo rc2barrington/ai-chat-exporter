@@ -6,7 +6,9 @@ export async function sessionFiles(session, options, loadAttachment, signal) {
   const messages = [{ text: generateMarkdown(session, options) }];
   const saved = [], failures = [];
   for (const [index, attachment] of (session.attachments || []).entries()) {
-    if (options.repliesOnly && !messages[0].text.includes(`(attachment:${index})`)) continue;
+    // Only files the Markdown links to. Images inside hidden tool output, or
+    // in your own messages with AI replies only, would be unlinked clutter.
+    if (!messages[0].text.includes(`(attachment:${index})`)) continue;
     signal.throwIfAborted();
     try {
       const blob = await loadAttachment(attachment, index, signal);

@@ -34,6 +34,12 @@ describe('Muse and Perplexity browser providers', () => {
     expect(data.messages[1].text).toContain('[Citation](<https://example.test/source>)');
     expect(JSON.stringify(data.messages)).not.toMatch(/Copy|Share/);
   });
+  it('leaves Perplexity\'s hover toolbar, with the time asked, out of the question and title', () => {
+    const toolbar = '<div class="opacity-0 group-hover/user-bubble:opacity-100"><span class="text-xs">12:07 AM</span><button aria-label="Copy"><svg></svg></button></div>';
+    const result = adapter.extract(doc(turn(`${toolbar}<div data-message-bubble><p>Read both files</p></div>`, '<p>Done</p>')), perplexity);
+    expect(result.messages[0].text).toBe('Read both files');
+    expect(result.title).toBe('Read both files');
+  });
   it('does not attach the next answer to an unfinished question', () => {
     expect(()=>adapter.extract(doc('<div class="group/user-bubble">Unfinished</div>'+turn('Other','Answer')),perplexity)).toThrow(/not finished/);
   });
@@ -166,6 +172,35 @@ describe('Muse and Perplexity browser providers', () => {
     expect(data.messages[0].text).toContain('plan.pdf');
     expect(data.messages[0].text).toContain('draft.md');
     expect(data.failedFetches).toHaveLength(0);
+  });
+  // Muse renders cards, offered images, file chips and reply options as
+  // buttons, mostly inside a copy-excluded area beside the message actions.
+  // Messages made only of these used to export as blank and fail.
+  it('keeps Muse cards, image choices, file chips and reply options but not message actions', () => {
+    const actions = '<button aria-label="Reply" data-pel-click="chat_reply_message"><svg></svg></button><button aria-label="More actions" data-pel-click="chat_message_overflow_open"><svg></svg></button>';
+    const document = museDoc(
+      message('1', 'user', '<div data-copy-exclude>You:</div><button class="hatch-chat-groupable-bubble" aria-label="notes_v1.2-final.xyz, XYZ"><span>notes_v1.2-final.xyz</span><span>XYZ</span></button>') +
+      message('2', 'assistant', `<div data-hatch-assistant-message-body><div data-copy-exclude><button aria-disabled="false"><span>Yes, send it</span></button>${actions}</div></div>`) +
+      message('3', 'assistant', `<div data-copy-exclude><button data-pel-click="idea_card_click" aria-label="A walk by the river"><div aria-hidden="true"><img src="https://muse.ai/decor.png"></div><p>A walk by the river</p><p>Take the long path home.</p></button><button data-pel-click="reaction_remove" aria-label="Remove reaction">💢</button>${actions}</div>`) +
+      message('4', 'assistant', `<div data-copy-exclude><button aria-label="Image option"><img src="https://muse.ai/one.png" alt="First"></button><button aria-label="Image option" aria-disabled="true"><img src="https://muse.ai/two.png" alt="Second"></button>${actions}</div>`));
+    const result = adapter.extract(document, muse);
+    expect(result.messages.map(item => item.text)).toEqual([
+      'notes_v1.2-final.xyz, XYZ',
+      '[Reply option: Yes, send it]',
+      '> A walk by the river\n>\n> Take the long path home.',
+      '![First](media/muse-1-one.png)\n\n![Second](media/muse-2-two.png)',
+    ]);
+    expect(result.remoteQueue.map(item => item.url)).toEqual(['https://muse.ai/one.png', 'https://muse.ai/two.png']);
+  });
+  it('names a Muse export after its page title and leaves out the app\'s bundled icons', () => {
+    const document = museDoc(message('1', 'user', 'First line of the prompt') +
+      message('2', 'assistant', '<p>Connected.</p><img src="/_next/static/media/connectorGoogleGmail-2x.40ulph8ci18en.png"><img src="https://muse.ai/api/image/real.png" alt="Real">'));
+    document.title = 'Chat with Boaber';
+    const result = adapter.extract(document, muse);
+    expect(result.title).toBe('Chat with Boaber');
+    expect(result.remoteQueue.map(item => item.url)).toEqual(['https://muse.ai/api/image/real.png']);
+    document.title = 'Muse';
+    expect(adapter.extract(document, muse).title).toBe('First line of the prompt');
   });
   it('keeps Muse image cards with opaque download URLs', () => {
     const document = museDoc(message('1','user','<div data-download-url="https://muse.ai/api/file/opaque" aria-label="photo.png">photo.png</div>'));

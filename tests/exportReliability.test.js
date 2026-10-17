@@ -100,3 +100,18 @@ it("uses each chat name inside a local batch ZIP without breaking media paths", 
   expect(Object.keys(archive.files).some(name => name.endsWith("/conversation.md"))).toBe(false);
   expect(await archive.file("First chat/first-chat.md").async("string")).toContain("media/1-image.png");
 });
+
+// A screenshot returned by a tool belongs to the tool output. With tool output
+// hidden, saving it would leave an unlinked file in the ZIP.
+it("saves only the attachments the exported Markdown links to", async () => {
+  const session = { title: "Tools", messages: [
+    { role: "## You", blocks: [{ type: "text", text: "![Upload](attachment:0)" }] },
+    { role: "## Codex", blocks: [{ type: "tool_result", content: "![Screenshot](attachment:1)" }, { type: "text", text: "Done" }] },
+  ], attachments: [{ label: "upload.png", image: true, mime: "image/png" }, { label: "screenshot.png", image: true, mime: "image/png" }] };
+  const load = async (_attachment, index) => new Blob([`image ${index}`], { type: "image/png" });
+  const hidden = await sessionFiles(session, {}, load, new AbortController().signal);
+  expect(hidden.files.map(f => f.filename)).toEqual(["tools.md", "media/1-upload.png"]);
+  const shown = await sessionFiles(session, { includeTools: true, includeResults: true }, load, new AbortController().signal);
+  expect(shown.files.map(f => f.filename)).toEqual(["tools.md", "media/1-upload.png", "media/2-screenshot.png"]);
+  expect(shown.files[0].content).toContain("(<media/2-screenshot.png>)");
+});

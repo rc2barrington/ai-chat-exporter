@@ -86,6 +86,21 @@ function throwIfExportCancelled(signal) {
   }
 }
 
+// Chrome unloads background tabs to save memory. A script cannot run in an
+// unloaded tab, and Chrome reports that as a missing host permission. Load
+// the tab again in place, without activating it, and wait for it to finish.
+async function reloadUnloadedTab(tabId, signal) {
+  await chrome.tabs.reload(tabId);
+  const started = Date.now();
+  while (Date.now() - started < 60000) {
+    throwIfExportCancelled(signal);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const tab = await chrome.tabs.get(tabId);
+    if (tab && !tab.discarded && tab.status === "complete") return tab;
+  }
+  throw new Error("Chrome had unloaded this tab to save memory, and it did not finish loading again within a minute. Open the tab once, then retry.");
+}
+
 function createExportRunId() {
   if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -1395,9 +1410,14 @@ async function runBatchExport(targetTabs, options, runId, signal) {
         if (!Number.isInteger(tabId)) {
           throw new Error("The selected Chrome tab no longer has a valid tab id.");
         }
-        const tabObj = await chrome.tabs.get(tabId);
+        let tabObj = await chrome.tabs.get(tabId);
         throwIfExportCancelled(signal);
         tabTitle = tabObj && tabObj.title ? tabObj.title : tabTitle;
+        if (tabObj && (tabObj.discarded || tabObj.status === "unloaded")) {
+          logProgress(`"${tabTitle}" was unloaded by Chrome to save memory. Loading it again in place...`, "info");
+          tabObj = await reloadUnloadedTab(tabId, signal);
+          throwIfExportCancelled(signal);
+        }
 
         currentExportTabId = tabId;
         // Never move, activate, focus, or resize the user's tab. The scraper's

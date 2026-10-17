@@ -28,9 +28,19 @@ export function createLocalSessions({ claudeHome = process.env.CLAUDE_CONFIG_DIR
     if (source === "claude-code") return claude.list();
     if (source === "opencode") return database(db => {
       const columns = new Set(db.prepare("PRAGMA table_info(session)").all().map(c => c.name));
+      // Models that answered in each session, oldest first.
+      const models = new Map();
+      const hasMessages = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='message'").get();
+      if (hasMessages) for (const row of db.prepare("SELECT session_id, json_extract(data, '$.modelID') AS model FROM message" +
+        " WHERE json_extract(data, '$.role') = 'assistant' AND json_extract(data, '$.modelID') IS NOT NULL ORDER BY time_created").all()) {
+        const list = models.get(row.session_id) || [];
+        if (!list.includes(row.model)) list.push(row.model);
+        models.set(row.session_id, list);
+      }
       return db.prepare("SELECT id,title,time_created,time_updated FROM session" +
         (columns.has("parent_id") ? " WHERE parent_id IS NULL OR parent_id = ''" : "") +
-        " ORDER BY time_updated DESC").all().map(s => ({ id: s.id, title: s.title || "Untitled OpenCode chat", updatedAt: new Date(s.time_updated).toISOString() }));
+        " ORDER BY time_updated DESC").all().map(s => ({ id: s.id, title: s.title || "Untitled OpenCode chat", updatedAt: new Date(s.time_updated).toISOString(),
+          ...(models.has(s.id) ? { models: models.get(s.id) } : {}) }));
     });
     if (source !== "codex") throw new Error("Unsupported local source.");
     files.clear();

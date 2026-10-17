@@ -135,6 +135,30 @@ it('reports which Muse history is still unloaded and pins only message rows', ()
   });
 });
 
+it('loads lazy Muse images inside messages but leaves other lazy content alone', () => {
+  const { context, document, list } = fixture();
+  // A row the fixture does not re-render, so the skeleton stays in place.
+  const row = document.createElement('div');
+  row.setAttribute('data-message-item', '');
+  const skeleton = document.createElement('div');
+  row.append(skeleton);
+  list.append(row);
+  const outside = document.createElement('div');
+  document.body.append(outside);
+  for (const node of [skeleton, outside]) node.getBoundingClientRect = () => ({ top: 5000, bottom: 5220, left: 0, right: 220 });
+  const loaded = [];
+  const media = new context.IntersectionObserver(entries => entries.forEach(entry => {
+    if (!entry.isIntersecting) return;
+    loaded.push(entry.target);
+    media.unobserve(entry.target);
+  }), { rootMargin: '200px' });
+  media.observe(skeleton);
+  media.observe(outside);
+  document.dispatchEvent(new document.defaultView.Event('__aiExporterMuseStart'));
+  expect(loaded).toEqual([skeleton]);
+  document.dispatchEvent(new document.defaultView.Event('__aiExporterMuseStop'));
+});
+
 it('tells an already-open Muse tab to refresh rather than export placeholders', async () => {
   const { context, document } = fixture({ install: false });
   await expect(context.AIChatExporterExtraAdapters.exportConversation(document, href, { requireBackgroundRendering: true }))
@@ -155,4 +179,26 @@ it('refuses a Muse export when older history stops loading', async () => {
 it('registers the automatic Muse helper', () => {
   const manifest = JSON.parse(readFileSync(new URL('../chrome-extension/manifest.json', import.meta.url)));
   expect(manifest.content_scripts).toContainEqual({ matches: ['https://muse.ai/*', 'https://www.muse.ai/*'], js: ['museBackground.js'], run_at: 'document_start', world: 'MAIN' });
+});
+
+// A Muse tab loaded while hidden stays on "Loading chat" until it is shown.
+// Muse's own router refresh finishes the load without navigating.
+it('refreshes a Muse tab that is stuck loading its chat, then exports it', async () => {
+  vi.useFakeTimers();
+  try {
+    const { context, document, list } = fixture();
+    const rows = [...list.children];
+    rows.forEach(row => row.remove());
+    const refresh = vi.fn(() => setTimeout(() => list.append(...rows), 1500));
+    context.next = { router: { refresh } };
+    const logs = [];
+    const pending = context.AIChatExporterExtraAdapters.exportConversation(document, href, {
+      includeMedia: false, requireBackgroundRendering: true, onProgress: value => logs.push(value),
+    });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(logs[0]).toMatch(/Waiting for Muse to finish loading/);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(result.messages).toHaveLength(12);
+  } finally { vi.useRealTimers(); }
 });

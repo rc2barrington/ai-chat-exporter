@@ -145,6 +145,9 @@ globalThis.AIChatExporterExtraAdapters = (() => {
         const linkedImage = tag === 'a' ? node : node.querySelector('a[href]');
         if (!linkedImage || !uploadKey(linkedImage.getAttribute('href')) || !isImage(linkedImage.getAttribute('href'))) return '';
       }
+      // Perplexity's question bubble has a toolbar, shown on hover, with the
+      // time it was asked and the copy and edit buttons. It is not the question.
+      if (provider === 'Perplexity' && node.matches('[class*="group-hover/user-bubble"]')) return '';
       if (provider === 'Muse' && node.matches('[role="button"][data-pel-click="space_proposal_view_space_click"]')) {
         const name = label(node.getAttribute('aria-label')) || 'Muse artifact';
         const preview = node.querySelector('img[alt="Artifact preview"]');
@@ -169,10 +172,14 @@ globalThis.AIChatExporterExtraAdapters = (() => {
           return `\n\n[Image unavailable in export: ${name}]\n\n`;
         }
       }
-      // Muse wraps uploaded and generated images in clickable buttons. The
-      // button label is UI chrome, but its image is part of the conversation.
-      if (provider === 'Muse' && tag === 'button' && (node.classList.contains('hatch-chat-groupable-bubble') || node.querySelector('img.outline-media-protection-border'))) {
-        return [...node.querySelectorAll('img')].map(render).join('');
+      if (provider === 'Muse' && tag === 'button') return museButton(node, false);
+      // Muse keeps cards, image choices and reply options in a copy-excluded
+      // area beside the message actions. Keep their content, not the action
+      // buttons or the hidden "You:" label.
+      if (provider === 'Muse' && node.matches('[data-copy-exclude]')) {
+        return [...node.querySelectorAll('button')]
+          .filter(button => !button.parentElement.closest('button') && !button.closest('[aria-hidden="true"],[hidden]'))
+          .map(button => museButton(button, true)).join('');
       }
       if (node.matches('[data-copy-exclude],[data-message-accessibility-surrogate],[data-workflow-text-footer],[hidden],[aria-hidden="true"],.sr-only') || ['script','style','svg','button','input','textarea'].includes(tag)) return '';
       if (tag === 'img' || tag === 'video' || tag === 'audio') {
@@ -182,6 +189,9 @@ globalThis.AIChatExporterExtraAdapters = (() => {
           node.getAttribute('data-original') || srcsetUrl(node.getAttribute('srcset') || node.getAttribute('data-srcset') || picture?.getAttribute('srcset')) ||
           node.querySelector('source')?.getAttribute('src'));
         if (!src || node.closest('[aria-hidden="true"],.space-icon,[class*="avatar"],[class*="favicon"]')) return '';
+        // Icons bundled with the Muse app, such as connector logos, are not
+        // conversation images.
+        if (provider === 'Muse' && /^\/_next\/static\//.test(new URL(src).pathname)) return '';
         const name = new URL(src).pathname.split('/').pop();
         const filename = /\.[a-z0-9]{2,5}$/i.test(name) ? name : `${tag}.${tag === 'img' ? 'png' : tag === 'video' ? 'mp4' : 'mp3'}`;
         const target = asset(src, filename, tag === 'img' ? 'image' : tag);
@@ -225,6 +235,26 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       if (tag === 'code') { const fence = '`'.repeat(Math.max(1, ...[...text.matchAll(/`+/g)].map(m => m[0].length + 1))); return `${fence} ${text} ${fence}`; }
       return ['p','div','section','ul','ol'].includes(tag) ? '\n\n' + text + '\n\n' : text;
     }
+    // Muse renders much of a message's content as buttons. Message actions
+    // (reply, copy, menus, reactions) carry no text of their own, or name an
+    // analytics action, and are left out.
+    function museButton(node, inActions) {
+      const action = node.getAttribute('data-pel-click') || '';
+      // Idea, shopping and similar cards: a title and description.
+      if (/_(card|row|entity)_click$/.test(action)) {
+        const card = [...node.childNodes].map(render).join('').replace(/\n{3,}/g, '\n\n').trim();
+        return card ? `\n\n${card.split('\n').map(line => line ? `> ${line}` : '>').join('\n')}\n\n` : '';
+      }
+      // Uploaded, generated and offered images. The label is UI chrome.
+      if (node.querySelector('img')) return [...node.querySelectorAll('img')].map(render).join('');
+      // A file chip without a preview: its name is the content, as for the
+      // named file buttons above.
+      if (node.classList.contains('hatch-chat-groupable-bubble')) return label(node.getAttribute('aria-label') || node.textContent);
+      // A reply option the assistant offered, such as "Yes, send it".
+      const text = label(node.textContent);
+      if (inActions && text && !action && !node.hasAttribute('aria-label')) return `\n\n[Reply option: ${text}]\n\n`;
+      return '';
+    }
     const messages = items.map(item => {
       const fallback = item.node.querySelector('[data-message-accessibility-surrogate]');
       const text = (fallback ? fallback.textContent.replace(/^(User|Assistant) message:\s*/i, '') : render(item.node)).replace(/\n{3,}/g, '\n\n').trim();
@@ -233,7 +263,10 @@ globalThis.AIChatExporterExtraAdapters = (() => {
     });
     if (!messages.length) throw new Error(`No ${provider} messages have loaded. Open a conversation and retry.`);
     const firstQuestion = messages.find(m => m.role === '## You')?.text.split('\n')[0] || '';
-    const title = firstQuestion.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[[^\]]*\]\([^)]*\)/g, '').replace(/\s+/g, ' ').slice(0, 140).trim() || doc.title || provider;
+    // Muse names a chat in the page title, for example "Chat" followed by
+    // the agent's name. A tab that has not finished loading shows only "Muse".
+    const pageTitle = provider === 'Muse' && doc.title && doc.title.trim() !== 'Muse' ? doc.title.trim().slice(0, 140) : '';
+    const title = pageTitle || firstQuestion.replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[[^\]]*\]\([^)]*\)/g, '').replace(/\s+/g, ' ').slice(0, 140).trim() || doc.title || provider;
     const missingImages = provider === 'Perplexity' && includeMedia
       ? [...uploads.entries()].filter(([key]) => !media.has(key)).map(([, file]) => ({ name: file.name, target: asset(file.src, file.name, 'image') }))
       : [];
@@ -326,6 +359,22 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       if (signal?.aborted) abort();
     });
     check();
+    // A Muse tab that was reloaded or restored in the background stays on
+    // "Loading chat" until it is shown. Muse's own router refresh, run by
+    // museBackground.js, finishes the load without navigating.
+    if (provider === 'Muse' && !doc.querySelector('[aria-label="Chat messages"] [data-message-item]')) {
+      progress('Waiting for Muse to finish loading the chat...');
+      const started = Date.now();
+      let refreshed = started;
+      while (!doc.querySelector('[aria-label="Chat messages"] [data-message-item]') && Date.now() - started < 30000) {
+        if (Date.now() - refreshed >= (refreshed === started ? 3000 : 10000)) {
+          refreshed = Date.now();
+          doc.dispatchEvent(new (doc.defaultView?.Event || Event)('__aiExporterMuseRefresh'));
+        }
+        await wait(500);
+        check();
+      }
+    }
     const threadRoot = provider === 'Perplexity' ? perplexityRoot(doc) : null;
     const initial = entries(doc, href, { allowPlaceholders: true, root: threadRoot });
     const first = initial[0]?.node;
