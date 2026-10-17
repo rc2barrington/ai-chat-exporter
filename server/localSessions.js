@@ -185,7 +185,7 @@ async function hasCodexConversation(filename) {
 // or a parent reference, and files are only written into folders this app
 // created.
 const safeName = name => typeof name === "string" && name.length > 0 && name.length <= 200 &&
-  !/[\/\\\u0000-\u001f]/.test(name) && !name.startsWith(".");
+  !name.includes("/") && !name.includes("\\") && ![...name].some(char => char.charCodeAt(0) < 32) && !name.startsWith(".");
 function exportSaver(downloadsDir) {
   const created = new Set();
   async function freshFile(name) {
