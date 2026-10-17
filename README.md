@@ -83,6 +83,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.1
+
+Muse chats longer than about 110 messages now export. Muse keeps only part of a long chat loaded at a time, so the newest messages appear only while scrolling down, and the exporter treated them as the chat changing mid-export. It now joins each loaded section onto the message list as it scrolls, and still refuses to save if it detects a gap.
+
 ## 1.2.0
 
 One app and one repository. The separate private edition is retired: OpenCode, Claude Code and Codex are all available in the local app at port 4179, and the edition machinery (edition settings, release snapshot script, separate port and publishing guard) is removed. The Muse and Perplexity adapter file is renamed `extraBrowserAdapters.js`, since nothing about it was private.
