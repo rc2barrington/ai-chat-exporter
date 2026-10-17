@@ -39,13 +39,13 @@ function logProgress(message, type = "info") {
   }
 }
 
-// Create the offscreen document context for DOM-based zipping and downloads
+// Create the offscreen document context for DOM-based packaging and downloads
 async function setupOffscreenDocument(path) {
   try {
     await chrome.offscreen.createDocument({
       url: path,
       reasons: ['DOM_PARSER', 'BLOBS'],
-      justification: 'Fetch remote files, compile JSZip, and create a temporary blob URL for download'
+      justification: 'Fetch remote files and create temporary blob URLs for the export folder'
     });
   } catch (err) {
     // If it already exists, ignore the error
@@ -190,9 +190,9 @@ async function installTabCancellationBridge(tabId) {
 }
 
 function signalOffscreenCancellation(runId) {
-  // The offscreen document owns remote media requests and ZIP generation.
+  // The offscreen document owns remote media requests and file preparation.
   // Send its AbortController a signal, then close the document as a hard stop
-  // for any JSZip work that was already queued.
+  // for any work that was already queued.
   try {
     chrome.runtime.sendMessage({
       action: "cancelOffscreenExport",
@@ -1384,6 +1384,74 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // externally_connectable, let a script start an export and write a file to
 // disk with no user interaction. Exports must originate from the popup.
 
+// Saves one file through chrome.downloads and resolves with the finished
+// download item, whose filename is the path Chrome actually used.
+function saveDownload(url, filename, signal) {
+  return new Promise((resolve, reject) => {
+    let listener = null;
+    let downloadId = null;
+    let settled = false;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      if (listener) chrome.downloads.onChanged.removeListener(listener);
+      if (activeDownloadId === downloadId) activeDownloadId = null;
+      fn(value);
+    };
+    const cancelDownload = id => {
+      if (id === null || id === undefined) return;
+      chrome.downloads.cancel(id, () => { void chrome.runtime.lastError; });
+    };
+    const onAbort = () => {
+      cancelDownload(downloadId);
+      finish(reject, exportCancellationError("Export cancelled during download."));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    chrome.downloads.download({ url, filename, saveAs: false, conflictAction: "uniquify" }, (startedDownloadId) => {
+      if (chrome.runtime.lastError) {
+        if (settled) return;
+        return finish(reject, new Error(chrome.runtime.lastError.message));
+      }
+      if (settled || signal.aborted) {
+        cancelDownload(startedDownloadId);
+        return;
+      }
+      downloadId = startedDownloadId;
+      activeDownloadId = startedDownloadId;
+      listener = (delta) => {
+        if (delta.id !== downloadId || !delta.state || delta.state.current === "in_progress") return;
+        if (delta.state.current !== "complete") return finish(reject, new Error(`Download state: ${delta.state.current}`));
+        chrome.downloads.search({ id: downloadId }, items => finish(resolve, (items && items[0]) || { id: downloadId, filename }));
+      };
+      chrome.downloads.onChanged.addListener(listener);
+    });
+  });
+}
+
+// Deletes a file this export just saved, and its download-history entry.
+function removeSavedDownload(id) {
+  return new Promise(resolve => {
+    chrome.downloads.removeFile(id, () => {
+      void chrome.runtime.lastError;
+      chrome.downloads.erase({ id }, () => { void chrome.runtime.lastError; resolve(); });
+    });
+  });
+}
+
+function revokeOffscreenUrl(url) {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ action: "revokeBlobUrl", url }, () => {
+      void chrome.runtime.lastError;
+      resolve();
+    });
+  });
+}
+
 async function runBatchExport(targetTabs, options, runId, signal) {
   logProgress(`Starting ${targetTabs.length > 1 ? "batch " : ""}export of ${targetTabs.length} chat(s) in background...`, "info");
   let successfulExports = 0;
@@ -1648,81 +1716,42 @@ async function runBatchExport(targetTabs, options, runId, signal) {
 
           const packagedUrl = offscreenResponse &&
             (offscreenResponse.downloadUrl || offscreenResponse.dataUrl);
-          if (offscreenResponse && offscreenResponse.status === "success" && packagedUrl) {
+          const folderFiles = offscreenResponse && Array.isArray(offscreenResponse.files) ? offscreenResponse.files : null;
+          if (offscreenResponse && offscreenResponse.status === "success" && folderFiles && folderFiles.length) {
+            // A chat with attachments becomes a folder in Downloads: its
+            // Markdown plus media/. If a folder of that name already holds an
+            // export of this chat, Chrome would rename the new Markdown
+            // instead, so remove that copy and use the next folder name.
+            const [markdown, ...media] = folderFiles;
+            let folder = offscreenResponse.folder;
+            logProgress(`Saving folder ${folder}/ with ${folderFiles.length} files...`, "info");
+            try {
+              for (let attempt = 1; ; attempt++) {
+                folder = attempt === 1 ? offscreenResponse.folder : `${offscreenResponse.folder} (${attempt})`;
+                const item = await saveDownload(markdown.url, `${folder}/${markdown.path}`, signal);
+                if (String(item.filename || "").split(/[\\/]/).pop() === markdown.path) break;
+                await removeSavedDownload(item.id);
+                if (attempt >= 50) throw new Error(`No free folder name for ${offscreenResponse.folder}.`);
+              }
+              for (const file of media) {
+                throwIfExportCancelled(signal);
+                await saveDownload(file.url, `${folder}/${file.path}`, signal);
+              }
+              logProgress(`Successfully downloaded: ${folder}/ (${folderFiles.length} files)`, "success");
+            } finally {
+              for (const file of folderFiles) await revokeOffscreenUrl(file.url);
+            }
+            throwIfExportCancelled(signal);
+            successfulExports++;
+
+          } else if (offscreenResponse && offscreenResponse.status === "success" && packagedUrl) {
             const { filename } = offscreenResponse;
             logProgress(`Starting download of: ${filename}...`, "info");
-
             try {
-              await new Promise((resolve, reject) => {
-                let listener = null;
-                let downloadId = null;
-                let settled = false;
-                let timer = null;
-                const finish = (fn, value) => {
-                  if (settled) return;
-                  settled = true;
-                  if (timer) clearTimeout(timer);
-                  signal.removeEventListener("abort", onAbort);
-                  if (listener) chrome.downloads.onChanged.removeListener(listener);
-                  if (activeDownloadId === downloadId) activeDownloadId = null;
-                  fn(value);
-                };
-                const cancelDownload = id => {
-                  if (id === null || id === undefined) return;
-                  chrome.downloads.cancel(id, () => { void chrome.runtime.lastError; });
-                };
-                const onAbort = () => {
-                  cancelDownload(downloadId);
-                  finish(reject, exportCancellationError("Export cancelled during download."));
-                };
-                signal.addEventListener("abort", onAbort, { once: true });
-
-                if (signal.aborted) {
-                  onAbort();
-                  return;
-                }
-
-                chrome.downloads.download({
-                  url: packagedUrl,
-                  filename: filename,
-                  saveAs: false
-                }, (startedDownloadId) => {
-                  if (chrome.runtime.lastError) {
-                    if (settled) return;
-                    return finish(reject, new Error(chrome.runtime.lastError.message));
-                  }
-                  if (settled || signal.aborted) {
-                    cancelDownload(startedDownloadId);
-                    return;
-                  }
-                  downloadId = startedDownloadId;
-                  activeDownloadId = startedDownloadId;
-
-                  listener = (delta) => {
-                    if (delta.id === downloadId && delta.state && delta.state.current !== 'in_progress') {
-                      if (delta.state.current === 'complete') {
-                        logProgress(`Successfully downloaded: ${filename}`, "success");
-                        finish(resolve);
-                      } else {
-                        finish(reject, new Error(`Download state: ${delta.state.current}`));
-                      }
-                    }
-                  };
-                  chrome.downloads.onChanged.addListener(listener);
-                });
-              });
+              await saveDownload(packagedUrl, filename, signal);
+              logProgress(`Successfully downloaded: ${filename}`, "success");
             } finally {
-              if (packagedUrl.startsWith("blob:")) {
-                await new Promise((resolve) => {
-                  chrome.runtime.sendMessage(
-                    { action: "revokeBlobUrl", url: packagedUrl },
-                    () => {
-                      void chrome.runtime.lastError;
-                      resolve();
-                    }
-                  );
-                });
-              }
+              if (packagedUrl.startsWith("blob:")) await revokeOffscreenUrl(packagedUrl);
             }
             throwIfExportCancelled(signal);
             successfulExports++;

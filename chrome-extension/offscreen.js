@@ -1,5 +1,5 @@
 // Offscreen script for AI Chat Exporter Chrome Extension
-// Handles DOM/window-level operations: fetches remote media, zips with JSZip, and triggers downloads via blob URLs.
+// Handles DOM/window-level operations: fetches remote media and prepares the export's files as blob URLs for download.
 
 // Establish a persistent heartbeat to keep the background service worker alive
 let keepAlivePort;
@@ -78,12 +78,13 @@ function logProgress(message, type = "info") {
   }
 }
 
-// Build the markdown file contents
-// A Date shifted so that JSZip's UTC-based DOS timestamp encoding stores the
-// local wall clock. See the call site for why this is needed.
-function zipLocalDate(d = new Date()) {
+// A Date shifted so its UTC fields read as the local wall clock, for the
+// local date in export folder names.
+function localDate(d = new Date()) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
 }
+
+// Build the markdown file contents
 
 async function buildMarkdown(data, signal) {
   const nl = "\n";
@@ -151,7 +152,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({
           status: "success",
           downloadUrl: resData.downloadUrl,
-          filename: resData.filename
+          filename: resData.filename,
+          folder: resData.folder,
+          files: resData.files
         });
       })
       .catch(err => {
@@ -316,45 +319,30 @@ async function processSessionDownload(data, options, signal) {
   const markdownContent = await buildMarkdown(data, signal);
   throwIfPackagingCancelled(signal);
   const safeTitle = data.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 60) || "chat-export";
-  const stamp = zipLocalDate().toISOString().slice(0, 10);
+  const stamp = localDate().toISOString().slice(0, 10);
 
   if (data.savedMedia && data.savedMedia.length > 0) {
-    logProgress(`Compiling zip package...`, "info");
-    const zip = new JSZip();
-
-    // JSZip builds each entry's DOS timestamp with UTC getters, but the ZIP
-    // format defines that field as local time, so every extractor reads it
-    // back as local. West of UTC that makes extracted files look like they
-    // were modified hours in the future (5 hours in US Central). Pre-shift
-    // the date so the stored wall clock is the local one.
-    const zipStamp = zipLocalDate();
-
-    zip.file(`${safeTitle}.md`, markdownContent, { date: zipStamp });
-
-    const mediaFolder = zip.folder("media");
+    // A chat with attachments is saved as a folder, its Markdown plus media/,
+    // so it opens straight away in Finder instead of arriving as a ZIP. The
+    // background worker writes each file into the folder.
+    logProgress(`Preparing the chat folder: ${data.savedMedia.length + 1} files...`, "info");
+    const files = [{
+      path: `${safeTitle}.md`,
+      url: URL.createObjectURL(new Blob([markdownContent], { type: "text/markdown;charset=utf-8" })),
+    }];
     for (let mediaIndex = 0; mediaIndex < data.savedMedia.length; mediaIndex++) {
       throwIfPackagingCancelled(signal);
       const media = data.savedMedia[mediaIndex];
-      if (media.blob instanceof Blob) {
-        mediaFolder.file(media.filename, await raceWithPackagingCancellation(media.blob.arrayBuffer(), signal), { date: zipStamp });
-      } else {
-        mediaFolder.file(media.filename, media.base64, { base64: true, date: zipStamp });
-      }
+      const blob = media.blob instanceof Blob
+        ? media.blob
+        : await raceWithPackagingCancellation(fetch(`data:${media.type || "application/octet-stream"};base64,${media.base64}`).then(res => res.blob()), signal);
+      files.push({ path: `media/${media.filename}`, url: URL.createObjectURL(blob) });
       if (mediaIndex > 0 && mediaIndex % 25 === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
-
-    globalThis.AIChatExporterCore?.stampZip(zip);
-    const zipBlob = await raceWithPackagingCancellation(
-      zip.generateAsync({ type: "blob" }),
-      signal
-    );
     throwIfPackagingCancelled(signal);
-    const downloadUrl = URL.createObjectURL(zipBlob);
-    logProgress(`Generated zip file (${(zipBlob.size / 1024 / 1024).toFixed(2)} MB).`, "info");
-
-    return { downloadUrl, filename: `${safeTitle}-${stamp}.zip` };
+    return { folder: `${safeTitle}-${stamp}`, files };
 
   } else {
     // No media, save as pure Markdown through an object URL too. Keeping the

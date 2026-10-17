@@ -6,6 +6,7 @@ import { LOCAL_PORT, SOURCE_NAMES } from "../appConfig.js";
 import { generateMarkdown } from "../generators/markdown.js";
 import { downloadBlob, sanitizeFilename } from "../utils/download.js";
 import { bundleZip } from "../utils/zip.js";
+import { saveToDirectory } from "../utils/saveFolder.js";
 import { renderMarkdown as markdownToHtml } from "../utils/markdownRender.js";
 import { getAllFilesFromDrop } from "../utils/files.js";
 import { BatchReview } from "./BatchReview.jsx";
@@ -92,10 +93,28 @@ export function ExportWorkspace({ source }) {
   }
   const visible = sessions.filter(s => s.title.toLowerCase().includes(search.trim().toLowerCase()));
   const picks = sessions.filter(s => selected.has(s.id));
+  async function saveToDownloads(title, chatFiles, signal) {
+    const post = async (params, content) => {
+      const response = await fetch(`/api/local-sessions/save?${new URLSearchParams(params)}`, { method: "POST", headers: { "X-AI-Exporter": "local-sessions", "Content-Type": "application/octet-stream" }, body: content, signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save the export to Downloads.");
+      return data;
+    };
+    if (chatFiles.length === 1) return (await post({ file: `${title}.md` }, chatFiles[0].content)).saved;
+    const { folder } = await post({ folder: title, path: chatFiles[0].filename }, chatFiles[0].content);
+    for (const file of chatFiles.slice(1)) await post({ folder, path: file.filename, into: "1" }, file.content);
+    return `${folder}/`;
+  }
   async function exportSessions(snapshot) {
     setReview(null);
+    let directory = null;
+    if (!local && typeof window.showDirectoryPicker === "function") {
+      try { directory = await window.showDirectoryPicker({ id: "ai-chat-exporter", mode: "readwrite", startIn: "downloads" }); }
+      catch (e) { if (e.name === "AbortError") return; }
+    }
     await work(`Exporting ${snapshot.length} chat${snapshot.length === 1 ? "" : "s"}…`, async signal => {
       const files = [];
+      const saved = [];
       const chatTitles = [];
       const failures = [];
       let duplicates = 0;
@@ -118,16 +137,21 @@ export function ExportWorkspace({ source }) {
         failures.push(...result.failures); duplicates += result.duplicates;
         const title = sanitizeFilename(session.title, "conversation");
         chatTitles.push(title);
-        for (const file of result.files) files.push({ ...file, filename: snapshot.length > 1 ? `${position + 1}-${title}/${file.filename}` : result.files.length === 1 ? title + ".md" : file.filename });
+        // Each chat is saved on its own: a Markdown file, or a folder holding
+        // the Markdown and media/ when it has attachments. No ZIP files.
+        if (local) saved.push(await saveToDownloads(title, result.files, signal));
+        else if (directory) saved.push(await saveToDirectory(directory, title, result.files));
+        else for (const file of result.files) files.push({ ...file, filename: snapshot.length > 1 ? `${position + 1}-${title}/${file.filename}` : result.files.length === 1 ? title + ".md" : file.filename });
       }
       signal.throwIfAborted();
       if (files.length === 1) downloadBlob(files[0].filename, files[0].content);
-      else {
+      else if (files.length) {
+        // Only for browsers without folder access.
         const zip = await bundleZip(files); signal.throwIfAborted();
         const archiveTitle = chatTitles.length === 1 ? chatTitles[0] : `${chatTitles[0]}-and-${chatTitles.length - 1}-more-chats`;
         downloadBlob(archiveTitle + ".zip", zip, "application/zip");
       }
-      setNotice(`${snapshot.length} chat${snapshot.length === 1 ? "" : "s"} exported. ${duplicates} exact duplicate image${duplicates === 1 ? "" : "s"} reused.${failures.length ? ` ${failures.length} attachments could not be saved: ${failures.join("; ")}` : ""}`);
+      setNotice(`${snapshot.length} chat${snapshot.length === 1 ? "" : "s"} exported${saved.length ? ` to ${local ? "Downloads" : "the chosen folder"}: ${saved.join(", ")}` : ""}. ${duplicates} exact duplicate image${duplicates === 1 ? "" : "s"} reused.${failures.length ? ` ${failures.length} attachments could not be saved: ${failures.join("; ")}` : ""}`);
     });
   }
   return <>

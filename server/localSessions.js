@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { mkdir, open as openFile, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -180,20 +180,74 @@ async function hasCodexConversation(filename) {
   return found;
 }
 
-export function localSessionsMiddleware(store = createLocalSessions()) {
+// Exports are saved straight into Downloads: a Markdown file, or a folder
+// holding the Markdown and media/. A name is one path segment, never hidden
+// or a parent reference, and files are only written into folders this app
+// created.
+const safeName = name => typeof name === "string" && name.length > 0 && name.length <= 200 &&
+  !name.includes("/") && !name.includes("\\") && ![...name].some(char => char.charCodeAt(0) < 32) && !name.startsWith(".");
+function exportSaver(downloadsDir) {
+  const created = new Set();
+  async function freshFile(name) {
+    const dot = name.lastIndexOf(".");
+    for (let n = 1; n < 1000; n++) {
+      const candidate = n === 1 ? name : `${name.slice(0, dot)} (${n})${name.slice(dot)}`;
+      try { return { name: candidate, handle: await openFile(path.join(downloadsDir, candidate), "wx") }; }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    }
+    throw new Error("No free file name in Downloads.");
+  }
+  async function freshFolder(name) {
+    for (let n = 1; n < 1000; n++) {
+      const candidate = n === 1 ? name : `${name} (${n})`;
+      try { await mkdir(path.join(downloadsDir, candidate)); created.add(candidate); return candidate; }
+      catch (error) { if (error.code !== "EEXIST") throw error; }
+    }
+    throw new Error("No free folder name in Downloads.");
+  }
+  async function writeBody(handle, req) {
+    try { for await (const chunk of req) await handle.write(chunk); }
+    finally { await handle.close(); }
+  }
+  return async function save(params, req) {
+    const file = params.get("file"), folder = params.get("folder"), relative = params.get("path") || "";
+    if (file) {
+      if (!safeName(file) || !file.endsWith(".md")) throw new Error("Invalid file name.");
+      const target = await freshFile(file);
+      await writeBody(target.handle, req);
+      return { saved: target.name };
+    }
+    const parts = relative.split("/");
+    if (!safeName(folder) || !parts.length || parts.length > 2 || parts.some(part => !safeName(part)) ||
+        (parts.length === 2 && parts[0] !== "media")) throw new Error("Invalid export path.");
+    const name = params.get("into") === "1" ? folder : await freshFolder(folder);
+    if (!created.has(name)) throw new Error("This export folder was not created by the local app.");
+    if (parts.length === 2) await mkdir(path.join(downloadsDir, name, "media"), { recursive: true });
+    const target = path.join(downloadsDir, name, ...parts);
+    if (!target.startsWith(path.join(downloadsDir, name) + path.sep)) throw new Error("Invalid export path.");
+    const handle = await openFile(target, "wx");
+    await writeBody(handle, req);
+    return { folder: name, saved: `${name}/${relative}` };
+  };
+}
+
+export function localSessionsMiddleware(store = createLocalSessions(), { downloadsDir = path.join(homedir(), "Downloads") } = {}) {
+  const save = exportSaver(downloadsDir);
   return async (req, res, next) => {
     if (!req.url.startsWith("/api/local-sessions")) return next();
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Content-Type", "application/json");
     const host = req.headers.host || "";
     const origin = req.headers.origin;
+    const saving = req.method === "POST" && req.url.startsWith("/api/local-sessions/save?");
     if (!/^127\.0\.0\.1:\d+$/.test(host) || (origin && origin !== `http://${host}`) ||
-        req.headers["x-ai-exporter"] !== "local-sessions" || req.method !== "GET") {
+        req.headers["x-ai-exporter"] !== "local-sessions" || (req.method !== "GET" && !saving)) {
       res.statusCode = 403;
       return res.end(JSON.stringify({ error: "Only the local exporter can read sessions." }));
     }
     try {
       const url = new URL(req.url, `http://${host}`);
+      if (saving) return res.end(JSON.stringify(await save(url.searchParams, req)));
       if (url.pathname !== "/api/local-sessions") throw new Error("Unknown endpoint.");
       if (url.searchParams.get("status") === "1") return res.end(JSON.stringify({ app: "ai-chat-exporter", version: LOCAL_APP_VERSION, sources: localSources() }));
       const source = url.searchParams.get("source");

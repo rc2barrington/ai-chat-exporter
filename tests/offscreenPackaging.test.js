@@ -2,6 +2,18 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
+
+// Records every blob the offscreen document hands out, by URL.
+function blobUrls() {
+  const blobs = new Map();
+  return { blobs, URL: { createObjectURL(blob) { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; }, revokeObjectURL() {} } };
+}
+// Reads a folder export back as { path: text }.
+async function folderOf(response, blobs) {
+  const out = {};
+  for (const file of response.files) out[file.path] = await blobs.get(file.url).text();
+  return out;
+}
 import "../chrome-extension/exportCore.js";
 import "../chrome-extension/exportTransport.js";
 
@@ -12,13 +24,14 @@ const source = readFileSync(
 
 describe("offscreen packaging", () => {
   it('excludes user messages and their files from replies-only archives', async () => {
-    let onMessage, blob;
+    let onMessage;
+    const { blobs, URL } = blobUrls();
     const context = {
-      AbortController, Blob, console, fetch, JSZip, setTimeout, clearTimeout,
+      AbortController, Blob, console, fetch, setTimeout, clearTimeout,
       AIChatExporterCore: globalThis.AIChatExporterCore,
       AIChatExporterTransport: globalThis.AIChatExporterTransport,
       setInterval: () => 1,
-      URL: { createObjectURL(value) { blob = value; return 'blob:test/replies'; } },
+      URL,
       chrome: { runtime: {
         connect: () => ({ onDisconnect: { addListener() {} } }),
         onMessage: { addListener(fn) { onMessage = fn; } },
@@ -33,22 +46,24 @@ describe("offscreen packaging", () => {
       remoteQueue: [], failedFetches: [], appendix: 'USER APPENDIX',
     } }, {}, resolve));
     expect(response.status).toBe('success');
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-    expect(Object.keys(zip.files).sort()).toEqual(['media/', 'media/answer.png', 'replies.md']);
-    const md = await zip.file('replies.md').async('string');
+    expect(response.folder).toMatch(/^replies-\d{4}-\d{2}-\d{2}$/);
+    const folder = await folderOf(response, blobs);
+    expect(Object.keys(folder)).toEqual(['replies.md', 'media/answer.png']);
+    const md = folder['replies.md'];
     expect(md).toContain('ANSWER');
     expect(md).not.toContain('USER');
     expect(md).toContain('message_count: 1');
     expect(md).toContain('export_scope: ai-replies-only');
   });
   it("packages chunked transfers with exact deduplication and authoritative history status", async () => {
-    let onMessage, blob;
+    let onMessage;
+    const { blobs, URL } = blobUrls();
     const context = {
-      AbortController, Blob, console, fetch, JSZip, setTimeout, clearTimeout,
+      AbortController, Blob, console, fetch, setTimeout, clearTimeout,
       AIChatExporterCore: globalThis.AIChatExporterCore,
       AIChatExporterTransport: globalThis.AIChatExporterTransport,
       setInterval: () => 1,
-      URL: { createObjectURL(value) { blob = value; return "blob:test/integration"; } },
+      URL,
       chrome: { runtime: {
         connect: () => ({ onDisconnect: { addListener() {} } }),
         onMessage: { addListener(fn) { onMessage = fn; } },
@@ -65,21 +80,21 @@ describe("offscreen packaging", () => {
     }, "test", request);
     const response = await request({ action: "zipAndDownload", transferId: "test", options: { includeMedia: true } });
     expect(response.status).toBe("success");
-    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
-    expect(Object.keys(zip.files).sort()).toEqual(["complete.md", "media/", "media/a.png"]);
-    const text = await zip.file("complete.md").async("string");
+    const folder = await folderOf(response, blobs);
+    expect(Object.keys(folder)).toEqual(["complete.md", "media/a.png"]);
+    const text = folder["complete.md"];
     expect(text).toContain("history_status: complete");
     expect(text).not.toContain("false");
     expect(text).toContain("FIRST ![one](media/a.png) ![two](media/a.png) LAST");
-    expect(await zip.file("media/a.png").async("string")).toBe("abc");
+    expect(folder["media/a.png"]).toBe("abc");
   });
-  it("uses the chat name for Markdown inside the ZIP, without an error-report entry", async () => {
+  it("saves a chat with attachments as a folder named after the chat, without an error-report entry", async () => {
     let onMessage;
-    let createdBlob;
+    const { blobs, URL } = blobUrls();
     const context = {
-      AbortController, Blob, console, fetch, JSZip, setTimeout, clearTimeout,
+      AbortController, Blob, console, fetch, setTimeout, clearTimeout,
       setInterval: () => 1,
-      URL: { createObjectURL(blob) { createdBlob = blob; return "blob:test/zip"; }, revokeObjectURL() {} },
+      URL,
       chrome: { runtime: {
         connect() { return { onDisconnect: { addListener() {} }, postMessage() {} }; },
         onMessage: { addListener(fn) { onMessage = fn; } },
@@ -95,11 +110,12 @@ describe("offscreen packaging", () => {
       failedFetches: [{ filename: "missing.png", url: "https://example.test/missing.png", error: "HTTP 404" }],
     } }, {}, resolve));
     expect(response.status).toBe("success");
-    expect(response.filename).toMatch(/\.zip$/);
-    const zip = await JSZip.loadAsync(await createdBlob.arrayBuffer());
-    expect(Object.keys(zip.files).sort()).toEqual(["media/", "media/saved.txt", "mixed-media.md"]);
-    expect(await zip.file("media/saved.txt").async("string")).toBe("hello");
-    const markdown = await zip.file("mixed-media.md").async("string");
+    expect(response.filename).toBeUndefined();
+    expect(response.folder).toMatch(/^mixed-media-\d{4}-\d{2}-\d{2}$/);
+    const folder = await folderOf(response, blobs);
+    expect(Object.keys(folder)).toEqual(["mixed-media.md", "media/saved.txt"]);
+    expect(folder["media/saved.txt"]).toBe("hello");
+    const markdown = folder["mixed-media.md"];
     expect(markdown).toContain("## Conversation files");
     expect(markdown).toContain("- [Saved](media/saved.txt)");
     expect(markdown).toContain("- [Missing] [fetch failed](https://example.test/missing.png)");

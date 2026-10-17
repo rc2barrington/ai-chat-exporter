@@ -241,7 +241,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Note: markdown + zip assembly happens in offscreen.js (see buildMarkdown there),
-  // which runs in a DOM context that can use FileReader/Blob and JSZip.
+  // which runs in a DOM context that can create Blob URLs for the files.
 
   // Main export action
   exportBtn.addEventListener("click", async () => {
