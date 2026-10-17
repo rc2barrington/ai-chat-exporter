@@ -95,15 +95,15 @@ export function ExportWorkspace({ source }) {
   const picks = sessions.filter(s => selected.has(s.id));
   async function saveToDownloads(title, chatFiles, signal) {
     const post = async (params, content) => {
-      const response = await fetch(`/api/local-sessions/save?${new URLSearchParams(params)}`, { method: "POST", headers: { "X-AI-Exporter": "local-sessions", "Content-Type": "application/octet-stream" }, body: content, signal });
+      const response = await fetch(`/api/local-sessions/save?${new URLSearchParams({ source, ...params })}`, { method: "POST", headers: { "X-AI-Exporter": "local-sessions", "Content-Type": "application/octet-stream" }, body: content, signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save the export to Downloads.");
       return data;
     };
     if (chatFiles.length === 1) return (await post({ file: `${title}.md` }, chatFiles[0].content)).saved;
-    const { folder } = await post({ folder: title, path: chatFiles[0].filename }, chatFiles[0].content);
-    for (const file of chatFiles.slice(1)) await post({ folder, path: file.filename, into: "1" }, file.content);
-    return `${folder}/`;
+    const first = await post({ folder: title, path: chatFiles[0].filename }, chatFiles[0].content);
+    for (const file of chatFiles.slice(1)) await post({ folder: first.folder, path: file.filename, into: "1" }, file.content);
+    return first.saved.replace(/[^/]+$/, "");
   }
   async function exportSessions(snapshot) {
     setReview(null);

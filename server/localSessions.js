@@ -7,7 +7,7 @@ import { createCodexParser } from "../src/parsers/codexJsonl.js";
 import { forEachLine, inlineAttachmentStore } from "./lineFiles.js";
 import { parseOpenCode } from "../src/parsers/opencode.js";
 import { codexFallbackTitle, isInternalCodexSession } from "../src/parsers/codexMetadata.js";
-import { VERSION, requireSource, localSources } from "../src/appConfig.js";
+import { VERSION, requireSource, localSources, SOURCE_NAMES } from "../src/appConfig.js";
 import { createClaudeSessions } from "./claudeSessions.js";
 
 export const LOCAL_APP_VERSION = VERSION;
@@ -188,46 +188,55 @@ const safeName = name => typeof name === "string" && name.length > 0 && name.len
   !name.includes("/") && !name.includes("\\") && ![...name].some(char => char.charCodeAt(0) < 32) && !name.startsWith(".");
 function exportSaver(downloadsDir) {
   const created = new Set();
-  async function freshFile(name) {
+  // Exports are kept together in Downloads/AI Chat Exports/<app>.
+  const appDir = async source => {
+    requireSource(source);
+    const dir = path.join(downloadsDir, "AI Chat Exports", SOURCE_NAMES[source]);
+    await mkdir(dir, { recursive: true });
+    return dir;
+  };
+  async function freshFile(dir, name) {
     const dot = name.lastIndexOf(".");
     for (let n = 1; n < 1000; n++) {
       const candidate = n === 1 ? name : `${name.slice(0, dot)} (${n})${name.slice(dot)}`;
-      try { return { name: candidate, handle: await openFile(path.join(downloadsDir, candidate), "wx") }; }
+      try { return { name: candidate, handle: await openFile(path.join(dir, candidate), "wx") }; }
       catch (error) { if (error.code !== "EEXIST") throw error; }
     }
-    throw new Error("No free file name in Downloads.");
+    throw new Error("No free file name in the export folder.");
   }
-  async function freshFolder(name) {
+  async function freshFolder(dir, name) {
     for (let n = 1; n < 1000; n++) {
       const candidate = n === 1 ? name : `${name} (${n})`;
-      try { await mkdir(path.join(downloadsDir, candidate)); created.add(candidate); return candidate; }
+      try { await mkdir(path.join(dir, candidate)); created.add(path.join(dir, candidate)); return candidate; }
       catch (error) { if (error.code !== "EEXIST") throw error; }
     }
-    throw new Error("No free folder name in Downloads.");
+    throw new Error("No free folder name in the export folder.");
   }
   async function writeBody(handle, req) {
     try { for await (const chunk of req) await handle.write(chunk); }
     finally { await handle.close(); }
   }
   return async function save(params, req) {
+    const dir = await appDir(params.get("source"));
+    const where = name => path.relative(downloadsDir, path.join(dir, name)).split(path.sep).join("/");
     const file = params.get("file"), folder = params.get("folder"), relative = params.get("path") || "";
     if (file) {
       if (!safeName(file) || !file.endsWith(".md")) throw new Error("Invalid file name.");
-      const target = await freshFile(file);
+      const target = await freshFile(dir, file);
       await writeBody(target.handle, req);
-      return { saved: target.name };
+      return { saved: where(target.name) };
     }
     const parts = relative.split("/");
     if (!safeName(folder) || !parts.length || parts.length > 2 || parts.some(part => !safeName(part)) ||
         (parts.length === 2 && parts[0] !== "media")) throw new Error("Invalid export path.");
-    const name = params.get("into") === "1" ? folder : await freshFolder(folder);
-    if (!created.has(name)) throw new Error("This export folder was not created by the local app.");
-    if (parts.length === 2) await mkdir(path.join(downloadsDir, name, "media"), { recursive: true });
-    const target = path.join(downloadsDir, name, ...parts);
-    if (!target.startsWith(path.join(downloadsDir, name) + path.sep)) throw new Error("Invalid export path.");
+    const name = params.get("into") === "1" ? folder : await freshFolder(dir, folder);
+    if (!created.has(path.join(dir, name))) throw new Error("This export folder was not created by the local app.");
+    if (parts.length === 2) await mkdir(path.join(dir, name, "media"), { recursive: true });
+    const target = path.join(dir, name, ...parts);
+    if (!target.startsWith(path.join(dir, name) + path.sep)) throw new Error("Invalid export path.");
     const handle = await openFile(target, "wx");
     await writeBody(handle, req);
-    return { folder: name, saved: `${name}/${relative}` };
+    return { folder: name, saved: where(`${name}/${relative}`) };
   };
 }
 
