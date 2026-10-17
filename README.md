@@ -20,11 +20,11 @@ Enable **AI replies only** in the extension's Export Settings, or in Export opti
 
 ### Local coding chats
 
-Choose a local source in the sidebar and download the Mac local app. Unzip it, then double-click **Open AI Chat Exporter.command**. Requires [Node.js](https://nodejs.org/en/download) 22.13 or newer. No `npm install` is needed for the packaged app. Keep its launcher window open while exporting. Developers can use the commands below directly from a checkout.
+Choose a local source in the sidebar and download the Mac local app. Unzip it, then double-click **Open AI Chat Exporter.command**. Requires [Node.js](https://nodejs.org/en/download) 22.15 or newer. No `npm install` is needed for the packaged app. Keep its launcher window open while exporting. Developers can use the commands below directly from a checkout.
 
 The local app opens directly to Codex and automatically lists saved chats. Choose another source in the sidebar for its saved conversations. Search, select, and export. Everything starts unselected. Manual file import is tucked under Advanced and is only needed for backups or files from another computer.
 
-- Codex: discovers `sessions` and `archived_sessions` under `$CODEX_HOME`, defaulting to `~/.codex`. Uses the state database's sidebar `name`, not the prompt stored in `title`. Falls back to the latest session-index name. Internal reviews and subagents are excluded from the main list, and copies of the same session are not listed twice. Parses the rollout message stream once, excluding mirrored UI events and injected system/developer instructions.
+- Codex: discovers `sessions` and `archived_sessions` under `$CODEX_HOME`, defaulting to `~/.codex`. Uses the state database's sidebar `name`, not the prompt stored in `title`. Falls back to the latest session-index name. Internal reviews and subagents are excluded from the main list, and copies of the same session are not listed twice. A long session is stored as several rollout pages, older ones compressed as `.jsonl.zst`; every page is read in order. Parses the rollout message stream once, excluding mirrored UI events and injected system/developer instructions.
 - OpenCode: reads `$XDG_DATA_HOME/opencode/opencode.db`, defaulting to `~/.local/share/opencode/opencode.db`, in read-only transactions. Includes text, saved reasoning, file parts, tool calls and results; excludes reverted tail messages. Each reply is headed with the model that wrote it, such as `## OpenCode (kimi-k3)`, the chat list shows the models used, and front matter lists them.
 - Manual file import is optional: Codex `.jsonl` rollouts or OpenCode `.json` exports. Imported files stay in your browser. Rollouts often do not contain sidebar names: use automatic discovery for named chats, or include `session_index.jsonl` in the import. Missing names use a date label, never the opening prompt. To copy local `file:` attachments, use automatic discovery in the local app.
 - Claude Code: discovers top-level project `.jsonl` sessions under `$CLAUDE_CONFIG_DIR`, defaulting to `~/.claude/projects`. Uses custom titles, generated titles, or session-index summaries rather than the first prompt. Subagent directories and symlinks are excluded. Preserves saved text, readable reasoning, tool results, and embedded image/document attachments. Manual `.jsonl` import is also available.
@@ -60,7 +60,7 @@ Browser attachment downloads contact the original providers or media hosts. The 
 
 ## Development
 
-Use Node.js 22.13 or newer (Node 24 is used in CI):
+Use Node.js 22.15 or newer (Node 24 is used in CI):
 
 ```sh
 npm ci
@@ -82,6 +82,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.5
+
+The local app now reads Codex sessions completely. Codex stores a long session as several rollout pages and compresses older ones as `.jsonl.zst`. The app read only uncompressed files and only the first copy it found, so it listed 9 of 97 Codex chats on the test machine and exported only the newest page of long ones (one chat had 2 of its 50 prompts). It now lists every session and reads all of its pages in order, once each. Node.js 22.15 or newer is required for the built-in zstd support.
 
 ## 1.2.4
 

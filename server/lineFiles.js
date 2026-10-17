@@ -1,11 +1,21 @@
 import { createReadStream } from "node:fs";
 import { createInterface } from "node:readline";
+import * as zlib from "node:zlib";
 
 // Read a JSONL file one line at a time. Saved sessions can exceed JavaScript's
 // maximum string length (about 512 MB), which makes readFile(..., "utf8")
 // throw "Invalid string length" for exactly the chats with the most history.
+// Codex compresses older pages of a long session as .jsonl.zst.
 export async function forEachLine(filename, visit) {
-  const input = createReadStream(filename, { encoding: "utf8" });
+  let input = createReadStream(filename);
+  if (filename.endsWith(".zst")) {
+    if (typeof zlib.createZstdDecompress !== "function") {
+      input.destroy();
+      throw new Error("This chat's older history is compressed. Install Node.js 22.15 or newer, then reopen the local app.");
+    }
+    input = input.pipe(zlib.createZstdDecompress());
+  }
+  input.setEncoding("utf8");
   try {
     for await (const line of createInterface({ input, crlfDelay: Infinity })) {
       if (visit(line) === false) break;
