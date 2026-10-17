@@ -370,6 +370,15 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       try { scroll.dispatchEvent(new (doc.defaultView?.Event || Event)('scroll', { bubbles: true })); } catch { /* Setting scrollTop also fires the native scroll event. */ }
     };
     const dispatch = name => doc.dispatchEvent(new (doc.defaultView?.Event || Event)(name));
+    // museBackground.js reports which history is still unloaded: "older",
+    // "newer", both, or "complete". Null means the helper is not running.
+    const museHistory = () => provider === 'Muse' ? doc.documentElement?.getAttribute?.('data-ai-exporter-muse-history') ?? null : null;
+    const museMore = side => (museHistory() || '').split(' ').includes(side);
+    // A history page can take several seconds, so a long pause is allowed
+    // before giving up. Without the helper only a pause can mark the end.
+    const historyPatience = 60000;
+    let progressAt = 0;
+    const historyProgress = message => { if (Date.now() - progressAt < 5000) return; progressAt = Date.now(); progress(message); };
     const finish = async () => {
       const ordered = expectedKeys.map(key => captured.get(key));
       if (provider === 'Perplexity' && ordered.some((item, index) => item.role !== (index % 2 ? 'assistant' : 'user'))) throw new Error('Perplexity did not render complete question and answer pairs. No partial conversation was saved.');
@@ -383,6 +392,12 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       // Capture the mounted tail before navigation. Perplexity replaces rows
       // outside the viewport with placeholders, including rows already seen.
       capture();
+      if (provider === 'Muse') {
+        dispatch('__aiExporterMuseStart');
+        if (doc.documentElement?.getAttribute?.('data-ai-exporter-muse-rendered-rows') == null && options.requireBackgroundRendering) {
+          throw new Error('Refresh this Muse chat once after updating the extension. The background rendering helper must load before the chat. No partial conversation was saved.');
+        }
+      }
       if (threadRoot) {
         threadRoot.setAttribute('data-ai-exporter-perplexity-root', '');
         dispatch('__aiExporterPerplexityStart');
@@ -413,8 +428,11 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       const reverse = scroll.scrollTop < -2;
       if (!reverse) scroll.scrollTop = 0;
       dispatchScroll();
-      let stable = 0, last = '';
-      while (stable < 4) {
+      // Muse loads older history in pages while the top is in view. With the
+      // helper, keep going until it reports nothing older remains.
+      const settle = provider === 'Muse' && museHistory() === null ? 12 : 4;
+      let stable = 0, last = '', changedAt = Date.now();
+      while (stable < settle || museMore('older')) {
         check(); await wait(); check();
         scroll.scrollTop = reverse ? -scroll.scrollHeight : 0;
         dispatchScroll();
@@ -422,6 +440,11 @@ globalThis.AIChatExporterExtraAdapters = (() => {
         const signature = `${scroll.scrollHeight}:${current.length}:${current[0]?.key}:${scroll.scrollTop}`;
         stable = signature === last ? stable + 1 : 0;
         last = signature;
+        if (!stable) changedAt = Date.now();
+        if (museMore('older')) {
+          if (Date.now() - changedAt > historyPatience) throw new Error('Muse stopped loading older messages before reaching the start of the chat. No partial conversation was saved.');
+          historyProgress(`Loading older Muse messages: ${current.length} mounted so far...`);
+        }
       }
       if (provider === 'Perplexity' && threadRoot) expectedKeys = [...threadRoot.children].map((_, index) => index);
       else expectedKeys = scanEntries().map(item => item.key);
@@ -435,13 +458,32 @@ globalThis.AIChatExporterExtraAdapters = (() => {
         scroll.scrollTop = reverse ? -scroll.scrollHeight : 0;
         dispatchScroll();
         await wait();
-        let bottomStable = 0, lastState = '';
+        let bottomStable = 0, lastState = '', content = '', changedAt = Date.now(), nudgedAt = 0;
         while (bottomStable < 4) {
           check(); capture();
-          const bottom = reverse ? scroll.scrollTop >= -2 : scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
+          const atEnd = reverse ? scroll.scrollTop >= -2 : scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
+          // After a jump to the top Muse unloads the newest messages and loads
+          // them back in pages near the bottom. The end is not the end yet.
+          const newer = museMore('newer');
+          const bottom = atEnd && !newer;
           const signature = `${scroll.scrollTop}:${scroll.scrollHeight}:${captured.size}`;
           bottomStable = bottom && signature === lastState ? bottomStable + 1 : 0;
           lastState = signature;
+          const loaded = `${scroll.scrollHeight}:${captured.size}:${expectedKeys.length}`;
+          if (loaded !== content) { content = loaded; changedAt = Date.now(); }
+          else if (atEnd && newer) {
+            if (Date.now() - changedAt > historyPatience) throw new Error('Muse stopped loading newer messages before reaching the end of the chat. No partial conversation was saved.');
+            historyProgress(`Loading newer Muse messages: ${captured.size} captured so far...`);
+            // Muse loads the next newer page only after its sentinel has left
+            // the view and come back, the way a reader scrolls.
+            if (Date.now() - Math.max(changedAt, nudgedAt) > 3000) {
+              nudgedAt = Date.now();
+              scroll.scrollTop -= scroll.clientHeight;
+              dispatchScroll();
+              await wait();
+              continue;
+            }
+          }
           if (!bottom) {
             const step = Math.max(120, scroll.clientHeight * 0.55);
             scroll.scrollTop += step;
@@ -495,6 +537,7 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       }
       return await finish();
     } finally {
+      if (provider === 'Muse') dispatch('__aiExporterMuseStop');
       if (threadRoot) {
         dispatch('__aiExporterPerplexityStop');
         threadRoot.removeAttribute('data-ai-exporter-perplexity-root');
