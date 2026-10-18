@@ -179,23 +179,23 @@ describe("saving exports to Downloads", () => {
   it("writes a chat as a folder with media/, or as a single Markdown file, never overwriting", async () => {
     const downloads = await mkdtemp(path.join(tmpdir(), "exporter-save-test-")); tempPaths.push(downloads);
     const middleware = localSessionsMiddleware({}, { downloadsDir: downloads });
-    await mkdir(path.join(downloads, "AI Chat Exports", "Codex", "my-chat"), { recursive: true });
+    await mkdir(path.join(downloads, "my-chat"));
     const first = await call(middleware, "/api/local-sessions/save?source=codex&folder=my-chat&path=my-chat.md", "# Chat");
     expect(first.data.folder).toBe("my-chat (2)");
     await call(middleware, `/api/local-sessions/save?${new URLSearchParams({ source: "codex", folder: first.data.folder, path: "media/1-Screen shot, 9.41 PM.png", into: "1" })}`, "png");
-    const dir = path.join(downloads, "AI Chat Exports", "Codex");
-    expect(first.data.saved).toBe("AI Chat Exports/Codex/my-chat (2)/my-chat.md");
+    const dir = downloads;
+    expect(first.data.saved).toBe("my-chat (2)/my-chat.md");
     expect(await readFile(path.join(dir, "my-chat (2)", "my-chat.md"), "utf8")).toBe("# Chat");
     expect(await readFile(path.join(dir, "my-chat (2)", "media", "1-Screen shot, 9.41 PM.png"), "utf8")).toBe("png");
     const single = await call(middleware, "/api/local-sessions/save?source=opencode&file=notes.md", "one");
     const again = await call(middleware, "/api/local-sessions/save?source=opencode&file=notes.md", "two");
-    expect([single.data.saved, again.data.saved]).toEqual(["AI Chat Exports/OpenCode/notes.md", "AI Chat Exports/OpenCode/notes (2).md"]);
-    expect(await readFile(path.join(downloads, "AI Chat Exports", "OpenCode", "notes.md"), "utf8")).toBe("one");
+    expect([single.data.saved, again.data.saved]).toEqual(["notes.md", "notes (2).md"]);
+    expect(await readFile(path.join(downloads, "notes.md"), "utf8")).toBe("one");
   });
   it("refuses paths outside its own export folders and requests from other pages", async () => {
     const downloads = await mkdtemp(path.join(tmpdir(), "exporter-save-guard-")); tempPaths.push(downloads);
     const middleware = localSessionsMiddleware({}, { downloadsDir: downloads });
-    await mkdir(path.join(downloads, "AI Chat Exports", "Codex", "existing"), { recursive: true });
+    await mkdir(path.join(downloads, "existing"));
     for (const url of [
       "/api/local-sessions/save?source=codex&folder=..&path=x.md",
       "/api/local-sessions/save?source=codex&folder=chat&path=../../escape.md",
@@ -208,7 +208,6 @@ describe("saving exports to Downloads", () => {
     ]) expect((await call(middleware, url, "x")).status).toBe(400);
     expect((await call(middleware, "/api/local-sessions/save?source=codex&file=a.md", "x", { origin: "https://evil.example" })).status).toBe(403);
     expect((await call(middleware, "/api/local-sessions/save?source=codex&file=a.md", "x", { "x-ai-exporter": "" })).status).toBe(403);
-    expect(await readdir(path.join(downloads, "AI Chat Exports", "Codex"))).toEqual(["existing"]);
-    expect(await readdir(downloads)).toEqual(["AI Chat Exports"]);
+    expect(await readdir(downloads)).toEqual(["existing"]);
   });
 });

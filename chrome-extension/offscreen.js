@@ -84,16 +84,6 @@ function localDate(d = new Date()) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000);
 }
 
-// Exports are kept together in Downloads/AI Chat Exports, one folder per app,
-// instead of being scattered across Downloads.
-const EXPORT_ROOT = "AI Chat Exports";
-function appFolder(siteName) {
-  const name = String(siteName || "");
-  if (/^Claude/.test(name)) return "Claude";
-  if (/^Google AI/.test(name)) return "Google AI";
-  return name.replace(/[^\w .-]+/g, "").trim() || "Other";
-}
-
 // Build the markdown file contents
 
 async function buildMarkdown(data, signal) {
@@ -358,7 +348,7 @@ async function processSessionDownload(data, options, signal) {
       }
     }
     throwIfPackagingCancelled(signal);
-    return { folder: `${EXPORT_ROOT}/${appFolder(data.siteName)}/${safeTitle}-${stamp}`, files };
+    return { folder: `${safeTitle}-${stamp}`, files };
 
   } else {
     // No media, save as pure Markdown through an object URL too. Keeping the
@@ -369,6 +359,6 @@ async function processSessionDownload(data, options, signal) {
     const downloadUrl = URL.createObjectURL(mdBlob);
     logProgress(`Generated markdown file.`, "info");
 
-    return { downloadUrl, filename: `${EXPORT_ROOT}/${appFolder(data.siteName)}/${safeTitle}.md` };
+    return { downloadUrl, filename: `${safeTitle}.md` };
   }
 }

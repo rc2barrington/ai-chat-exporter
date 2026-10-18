@@ -46,7 +46,7 @@ describe("offscreen packaging", () => {
       remoteQueue: [], failedFetches: [], appendix: 'USER APPENDIX',
     } }, {}, resolve));
     expect(response.status).toBe('success');
-    expect(response.folder).toMatch(/^AI Chat Exports\/Perplexity\/replies-\d{4}-\d{2}-\d{2}$/);
+    expect(response.folder).toMatch(/^replies-\d{4}-\d{2}-\d{2}$/);
     const folder = await folderOf(response, blobs);
     expect(Object.keys(folder)).toEqual(['replies.md', 'media/answer.png']);
     const md = folder['replies.md'];
@@ -111,7 +111,7 @@ describe("offscreen packaging", () => {
     } }, {}, resolve));
     expect(response.status).toBe("success");
     expect(response.filename).toBeUndefined();
-    expect(response.folder).toMatch(/^AI Chat Exports\/Google AI\/mixed-media-\d{4}-\d{2}-\d{2}$/);
+    expect(response.folder).toMatch(/^mixed-media-\d{4}-\d{2}-\d{2}$/);
     const folder = await folderOf(response, blobs);
     expect(Object.keys(folder)).toEqual(["mixed-media.md", "media/saved.txt"]);
     expect(folder["media/saved.txt"]).toBe("hello");
@@ -185,7 +185,7 @@ describe("offscreen packaging", () => {
     expect(response).toMatchObject({
       status: "success",
       downloadUrl: "blob:extension-test/large-export",
-      filename: expect.stringMatching(/^AI Chat Exports\/[^/]+\/synthetic-long-chat\.md$/),
+      filename: "synthetic-long-chat.md",
     });
     expect(response).not.toHaveProperty("dataUrl");
     expect(createdBlob).toBeInstanceOf(Blob);
