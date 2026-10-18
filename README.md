@@ -33,10 +33,9 @@ The local app opens directly to Codex and automatically lists saved chats. Choos
 ## Export behavior
 
 - No attachment files saved: a plain `.md` file, no empty media folder.
-- Everything is saved under `Downloads/AI Chat Exports/<app>/` (for example `AI Chat Exports/ChatGPT/`), never loose in Downloads.
 - Attachments saved: a folder named after the chat, holding a chat-named Markdown file (for example `my-chat.md`) and `media/`. No ZIP files. The extension names the folder with the local date (`my-chat-2026-10-17`); if a folder of that name already holds an export of the chat, it uses `my-chat-2026-10-17 (2)` rather than mixing files.
 - Browser exports record the chat's address as `source_url` in the front matter, so a chat can be found and exported again. Only files the Markdown links to are saved, so images inside hidden tool output are left out.
-- Local app: each chat is saved straight into `Downloads/AI Chat Exports/<app>/` by the local app itself, as a Markdown file or a chat folder, never overwriting an existing one. Multiple chats are saved side by side. The website's manual import asks once for a folder to save into (Chrome's folder access); browsers without it get a ZIP.
+- Local app: each chat is saved straight into Downloads by the local app itself, as a Markdown file or a chat folder, never overwriting an existing one. Multiple chats are saved side by side. The website's manual import asks once for a folder to save into (Chrome's folder access); browsers without it get a ZIP.
 - Exact duplicate images: one saved copy per conversation. SHA-256 groups candidates, then their bytes are compared. Different encodings and similar-looking images remain separate. Every occurrence still links to the retained image.
 - Batch export requires two separate confirmations of the selected chat names. The extension worker validates the confirmed selection snapshot too.
 - Message text and tool output are not truncated by the current interface. The parser cannot undo truncation already present in a provider's saved records.
@@ -84,6 +83,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.8
+
+Exports are saved straight into Downloads again, as before, instead of a shared AI Chat Exports folder. Chats with attachments still arrive as folders rather than ZIP files, and exports keep their `source_url`.
 
 ## 1.2.7
 

@@ -7,7 +7,7 @@ import { createCodexParser } from "../src/parsers/codexJsonl.js";
 import { forEachLine, inlineAttachmentStore } from "./lineFiles.js";
 import { parseOpenCode } from "../src/parsers/opencode.js";
 import { codexFallbackTitle, isInternalCodexSession } from "../src/parsers/codexMetadata.js";
-import { VERSION, requireSource, localSources, SOURCE_NAMES } from "../src/appConfig.js";
+import { VERSION, requireSource, localSources } from "../src/appConfig.js";
 import { createClaudeSessions } from "./claudeSessions.js";
 
 export const LOCAL_APP_VERSION = VERSION;
@@ -188,12 +188,10 @@ const safeName = name => typeof name === "string" && name.length > 0 && name.len
   !name.includes("/") && !name.includes("\\") && ![...name].some(char => char.charCodeAt(0) < 32) && !name.startsWith(".");
 function exportSaver(downloadsDir) {
   const created = new Set();
-  // Exports are kept together in Downloads/AI Chat Exports/<app>.
+  // Exports are saved straight into Downloads, next to everything else.
   const appDir = async source => {
     requireSource(source);
-    const dir = path.join(downloadsDir, "AI Chat Exports", SOURCE_NAMES[source]);
-    await mkdir(dir, { recursive: true });
-    return dir;
+    return downloadsDir;
   };
   async function freshFile(dir, name) {
     const dot = name.lastIndexOf(".");
