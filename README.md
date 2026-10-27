@@ -92,6 +92,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.10
+
+The iPhone Shortcut no longer fails with "the script took too long". It used the extension's export loop, which keeps reading the page for at least four seconds until it stops changing, and Shortcuts stops a web page script sooner than that. It now reads a finished conversation at once and needs only about a tenth of a second to expand a collapsed AI Overview.
+
 ## 1.2.9
 
 Google AI Mode and AI Overviews can be saved on iPhone: a Safari Share Sheet Shortcut runs the extension's Google adapter and saves the conversation as Markdown. The adapter now reads Google's mobile layout, where the question sits in a different element. It also expands a collapsed AI Overview before reading it. Google hides the collapsed part from screen readers, so on mobile only the first paragraph was exported. It leaves out the mobile source cards and placeholder images, keeps tappable terms such as the first word of an answer, and strips Google's `<b>` markup from image labels. These fixes apply to the Chrome extension too.

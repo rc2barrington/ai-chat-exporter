@@ -15,14 +15,19 @@ import { VERSION } from "../src/appConfig.js";
 const committed = readFileSync(new URL("../mobile/google-ai-export.js", import.meta.url), "utf8");
 
 // Runs the iPhone Shortcut script the way Shortcuts does: in the page, with a
-// completion() callback that receives the result.
-async function runOnPage(html, href) {
+// completion() callback that receives the result. `elapsed` is how long the
+// script took in page time; Shortcuts stops it after a few seconds.
+// `setup` can attach page behavior, such as Google's "Show more" handler.
+async function runOnPage(html, href, setup) {
   const { document } = parseHTML(`<html><body>${html}</body></html>`);
+  setup?.(document);
   let result;
-  const context = { document, location: { href }, URL, JSON, console, completion: value => { result = JSON.parse(value); },
-    setTimeout: (...args) => setTimeout(...args), clearTimeout: id => clearTimeout(id) };
   vi.useFakeTimers();
   try {
+    const start = Date.now();
+    const context = { document, location: { href }, URL, JSON, console, Date,
+      completion: value => { result = { ...JSON.parse(value), elapsed: Date.now() - start }; },
+      setTimeout: (...args) => setTimeout(...args), clearTimeout: id => clearTimeout(id) };
     vm.runInNewContext(committed, context);
     await vi.runAllTimersAsync();
   } finally { vi.useRealTimers(); }
@@ -44,11 +49,35 @@ it("saves a mobile Google AI Mode conversation as the extension's Markdown", asy
   expect(md.startsWith('---\ntitle: "How do heat pumps work?"\nsource: Google AI Mode\nsource_url: "' + href + '"\nexporter_version: "' + VERSION + '"\n')).toBe(true);
   expect(md).toContain("message_count: 4\nmedia_count: 0\n---\n\n# How do heat pumps work?\n\n## You\n\nHow do heat pumps work?\n\n---\n\n## Google AI Mode\n\nThey move heat.");
   expect(md.trimEnd().endsWith("## Google AI Mode\n\nDown to about -13°F.")).toBe(true);
+  // A finished conversation is read straight away, with no waiting.
+  expect(result.elapsed).toBe(0);
+});
+
+// Google expands the overview a moment after the tap, and its "Show more"
+// button keeps aria-expanded="false" afterwards, as on the live mobile page.
+it("expands a collapsed AI Overview and saves all of it well inside the Shortcuts time limit", async () => {
+  const html = '<div id="m-x-content"><div data-container-id="main-col"><p>The sky is blue because of <strong>Rayleigh scattering</strong>.</p>' +
+    '<div id="rest" aria-hidden="true"><p>Shorter blue waves scatter the most.</p></div></div></div>' +
+    '<div role="button" aria-expanded="false" aria-controls="m-x-content"><span>Show more</span></div>';
+  const href = "https://www.google.com/search?q=why+is+the+sky+blue";
+  const result = await runOnPage(html, href, document => document.querySelector('[aria-controls="m-x-content"]')
+    .addEventListener("click", () => queueMicrotask(() => document.querySelector("#rest").removeAttribute("aria-hidden"))));
+  expect(result.error).toBeUndefined();
+  expect(result.filename).toBe("why-is-the-sky-blue.md");
+  expect(result.markdown).toContain('source_url: "' + href + '"');
+  expect(result.markdown).toContain("## Google AI Overview\n\nThe sky is blue because of **Rayleigh scattering**.\n\nShorter blue waves scatter the most.");
+  expect(result.elapsed).toBeLessThanOrEqual(150);
 });
 
 it("explains what to do on a page that is not a Google AI answer", async () => {
   expect((await runOnPage("<p>Hello</p>", "https://example.com/")).error).toMatch(/Google AI Mode or AI Overview/);
-  expect((await runOnPage("<p>Plain results</p>", "https://www.google.com/search?q=x")).error).toMatch(/No AI Overview/);
+  const plain = await runOnPage("<p>Plain results</p>", "https://www.google.com/search?q=x");
+  expect(plain.error).toMatch(/No AI Overview/);
+  // An answer that might still be loading gets a short retry, never seconds.
+  expect(plain.elapsed).toBeLessThanOrEqual(1600);
+  const writing = await runOnPage('<div jsname="RH7zg"><span jsname="y5v2y">Q</span><div data-container-id="main-col"><p data-complete="false">Partial</p></div></div>', "https://www.google.com/search?q=x&udm=50");
+  expect(writing.error).toMatch(/incomplete/);
+  expect(writing.elapsed).toBeLessThanOrEqual(1600);
 });
 
 it("builds a Share Sheet Shortcut for Safari pages that runs the script and saves the file", () => {
