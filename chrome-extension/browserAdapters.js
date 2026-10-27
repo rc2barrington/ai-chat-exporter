@@ -34,6 +34,9 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       if (node.matches('[data-im][role="button"]')) return [...node.querySelectorAll("img")].map(render).join("\n");
       if (["script", "style", "svg", "button", "input", "textarea", "noscript"].includes(tag) ||
           node.matches('[hidden],[role="button"],[role="checkbox"],[role="dialog"],[aria-hidden="true"],[data-container-id="rhs-col"],[data-xid="Gd7Hsc"]') ||
+          // The mobile page lists source cards inside the answer; desktop shows
+          // them in the sidebar (rhs-col). Answer lists are ul/ol elements.
+          (node.matches('[role="list"]') && !/^(ul|ol)$/.test(tag)) ||
           /(?:^|;)\s*display\s*:\s*none\b/i.test(node.getAttribute("style") || "")) return "";
       if (tag === "img") {
         const alt = imageLabel(node);
@@ -43,6 +46,8 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
         const src = link(descriptor?.[3]?.[0]) || displayed;
         const sourceUrl = link(descriptor?.[4]?.["2003"]?.[2]);
         if (!src || /favicon|logo|icon/i.test(alt) || (node.getAttribute("width") && Number(node.getAttribute("width")) <= 32)) return "";
+        // A tiny inline GIF is a placeholder for an image that has not loaded.
+        if (/^data:image\/gif/i.test(src) && src.length < 512) return "";
         let target = src;
         if (includeMedia) {
           if (!media.has(src)) {
@@ -123,13 +128,20 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     });
     const scroll = doc.scrollingElement || doc.documentElement;
     const original = scroll.scrollTop;
+    // An AI Overview starts collapsed behind "Show more", and Google marks the
+    // collapsed part aria-hidden until it is expanded. Expand it once. Doing so
+    // adds a #fragment to the address, which is not a different page.
+    for (const button of doc.querySelectorAll('#m-x-content [role="button"][aria-expanded="false"]')) {
+      if (/^\s*show more\s*$/i.test(button.textContent || "")) button.click?.();
+    }
+    const samePage = (a, b) => String(a).split("#")[0] === String(b).split("#")[0];
     const observedQueries = new Set();
     let last = "", stable = 0;
     try {
       // No tab activation, window movement, or clipboard dependency.
       for (let i = 0; i < 32; i++) {
         if (signal?.aborted) throw cancelled();
-        if (doc.location?.href && doc.location.href !== href) throw new Error("The Google page changed during export. Export the intended conversation again.");
+        if (doc.location?.href && !samePage(doc.location.href, href)) throw new Error("The Google page changed during export. Export the intended conversation again.");
         scroll.scrollTop = i < 12 ? 0 : scroll.scrollHeight;
         await wait();
         const data = extractGoogle(doc, href, options);
