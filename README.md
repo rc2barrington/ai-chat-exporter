@@ -92,6 +92,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.11
+
+The iPhone Shortcut still took too long. Measured in iPhone Safari, the script itself finishes in about 40 ms, but Safari on iPhone gets some Google pictures inlined as data: URLs of several hundred KB, and the script pasted them into the Markdown: one short answer came back as 416 KB. When media files are not saved (the iPhone Shortcut, or the extension with media off), such a picture is now written as `[Image: description]`, so that answer is under 1 KB. Pictures saved as files keep the right extension, so an inline JPEG is no longer saved as .png.
+
 ## 1.2.10
 
 The iPhone Shortcut no longer fails with "the script took too long". It used the extension's export loop, which keeps reading the page for at least four seconds until it stops changing, and Shortcuts stops a web page script sooner than that. It now reads a finished conversation at once and needs only about a tenth of a second to expand a collapsed AI Overview.

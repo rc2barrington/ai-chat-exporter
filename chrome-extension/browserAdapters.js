@@ -50,10 +50,14 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
         if (!src || /favicon|logo|icon/i.test(alt) || (node.getAttribute("width") && Number(node.getAttribute("width")) <= 32)) return "";
         // A tiny inline GIF is a placeholder for an image that has not loaded.
         if (/^data:image\/gif/i.test(src) && src.length < 512) return "";
+        // Safari on iPhone gets some pictures inlined as data: URLs of several
+        // hundred KB. Without media files there is no link to keep, so name
+        // the picture instead of pasting it into the text.
+        if (!includeMedia && /^data:/i.test(src)) return `\n\n[Image: ${alt}]${sourceUrl ? `\n[Image source](<${sourceUrl}>)` : ""}\n\n`;
         let target = src;
         if (includeMedia) {
           if (!media.has(src)) {
-            const ext = src.match(/\.(png|jpe?g|gif|webp|avif)(?:[?#]|$)/i)?.[1] || "png";
+            const ext = (src.match(/^data:image\/(png|jpe?g|gif|webp|avif)[;,]/i) || src.match(/\.(png|jpe?g|gif|webp|avif)(?:[?#]|$)/i))?.[1] || "png";
             const filename = `google-image-${media.size + 1}.${ext}`;
             media.set(src, filename);
             remoteQueue.push({ url: src, fallbackUrl: displayed !== src ? displayed : "", filename, kind: "image", alt });
