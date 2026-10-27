@@ -26,6 +26,18 @@ describe("Google Search adapters", () => {
     const result = adapters.extractGoogle(doc, "https://www.google.com/search?udm=50&q=Follow-up");
     expect(result.messages.map(m => m.text)).toEqual(["First question", "Same answer\n\n[Source](<https://example.com/source>)", "Follow-up", "Same answer"]);
   });
+  // Google's mobile page (iPhone Safari) puts the question in a y5v2y
+  // heading instead of eFVkfb.
+  it("reads AI Mode on Google's mobile page, with clean image labels and bold text", () => {
+    const mobileTurn = (question, answer) => `<div jsname="RH7zg"><span role="heading" aria-level="2"><span jsname="y5v2y">${question}</span></span><div data-container-id="main-col">${answer}</div></div>`;
+    const doc = documentFor(mobileTurn("how do heat pumps work", '<img src="https://example.com/pump.png" alt="<b>Heat Pump</b> diagram"><p><strong>Most stop</strong><strong>.</strong> Below -13°F.</p>') + mobileTurn("follow up", "<p>Answer two</p>"));
+    const result = adapters.extractGoogle(doc, "https://www.google.com/search?q=how+do+heat+pumps+work&udm=50", { includeMedia: false });
+    expect(result.messages.map(m => m.role)).toEqual(["## You", "## Google AI Mode", "## You", "## Google AI Mode"]);
+    expect(result.messages[0].text).toBe("how do heat pumps work");
+    expect(result.messages[1].text).toContain("![Heat Pump diagram](https://example.com/pump.png)");
+    expect(result.messages[1].text).toContain("**Most stop.** Below -13°F.");
+    expect(result.messages[2].text).toBe("follow up");
+  });
   it("does not pass ordinary results or incomplete AI Mode turns off as complete exports", () => {
     expect(() => adapters.extractGoogle(documentFor("Just search results"), "https://www.google.com/search?q=test")).toThrow(/No AI Overview/);
     expect(() => adapters.extractGoogle(documentFor('<div jsname="RH7zg"><span jsname="eFVkfb">Question</span></div>'), "https://www.google.com/search?udm=50")).toThrow(/incomplete/);

@@ -3,7 +3,8 @@
 globalThis.AIChatExporterBrowserAdapters = (() => {
   const label = text => String(text || "").replace(/[[\]\r\n]/g, " ").trim();
   function imageLabel(image, isGemini = false) {
-    const alt = (image.getAttribute("alt") || "").trim();
+    // Google puts <b> highlighting inside image descriptions.
+    const alt = (image.getAttribute("alt") || "").replace(/<\/?[a-z][^>]*>/gi, "").trim();
     // Generic accessibility labels are not evidence of image provenance.
     if (isGemini && /^(?:an?\s+)?(?:ai[- ]generated(?:\s+image)?|generated\s+(?:image|by\s+gemini)|image\s+generated\s+by\s+(?:ai|gemini))[.!]?$/i.test(alt)) return "Image";
     return label(alt) || "Image";
@@ -85,7 +86,8 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       if (["div", "section", "ul", "ol"].includes(tag)) return "\n" + text + "\n";
       return text;
     }
-    const clean = node => render(node).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    // Adjacent bold runs ("**a****b**") read as one bold phrase.
+    const clean = node => render(node).replace(/\*\*\*\*/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
     const messages = [];
     const siteName = mode ? "Google AI Mode" : "Google AI Overview";
     if (mode) {
