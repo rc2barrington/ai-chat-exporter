@@ -18,6 +18,14 @@ Supported sources: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews and Goo
 
 Enable **AI replies only** in the extension's Export Settings, or in Export options for local sessions, to exclude your messages and their attachments. The console fallback also offers replies-only plain text output. Refresh an open Muse or Perplexity chat once after updating the extension to enable its background rendering helper.
 
+### iPhone: Google AI Mode and AI Overviews
+
+1. On your iPhone, download [Save Google AI Chat.shortcut](https://rc2barrington.github.io/ai-chat-exporter/downloads/Save%20Google%20AI%20Chat.shortcut), open it and choose **Add Shortcut**.
+2. In Safari, open a Google AI Mode chat or a search with an AI Overview and let the answer finish.
+3. Tap **Share**, choose **Save Google AI Chat**, and pick where to keep the `.md` file. The first time, allow it to run on google.com.
+
+The Shortcut runs the extension's Google adapter on the page and saves the same Markdown format, every turn of an AI Mode chat included. Collapsed AI Overviews are expanded first. Images stay as links. It works in Safari, not in the Google app or Chrome for iPhone. Developers rebuild it on a Mac with `node scripts/build-mobile.js` and `node scripts/build-shortcut.js` (Apple's `shortcuts sign` is required).
+
 ### Local coding chats
 
 Choose a local source in the sidebar and download the Mac local app. Unzip it, then double-click **Open AI Chat Exporter.command**. Requires [Node.js](https://nodejs.org/en/download) 22.15 or newer. No `npm install` is needed for the packaged app. Keep its launcher window open while exporting. Developers can use the commands below directly from a checkout.
@@ -83,6 +91,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.9
+
+Google AI Mode and AI Overviews can be saved on iPhone: a Safari Share Sheet Shortcut runs the extension's Google adapter and saves the conversation as Markdown. The adapter now reads Google's mobile layout, where the question sits in a different element. It also expands a collapsed AI Overview before reading it. Google hides the collapsed part from screen readers, so on mobile only the first paragraph was exported. It leaves out the mobile source cards and placeholder images, keeps tappable terms such as the first word of an answer, and strips Google's `<b>` markup from image labels. These fixes apply to the Chrome extension too.
 
 ## 1.2.8
 
