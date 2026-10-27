@@ -33,6 +33,8 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       const tag = node.tagName.toLowerCase();
       // Google's image viewer is a button, but its picture is answer content.
       if (node.matches('[data-im][role="button"]')) return [...node.querySelectorAll("img")].map(render).join("\n");
+      // A tappable term inside a sentence (an unlabelled span button) is text.
+      if (tag === "span" && node.getAttribute("role") === "button" && !node.hasAttribute("aria-label")) return [...node.childNodes].map(render).join("");
       if (["script", "style", "svg", "button", "input", "textarea", "noscript"].includes(tag) ||
           node.matches('[hidden],[role="button"],[role="checkbox"],[role="dialog"],[aria-hidden="true"],[data-container-id="rhs-col"],[data-xid="Gd7Hsc"]') ||
           // The mobile page lists source cards inside the answer; desktop shows
@@ -92,7 +94,8 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       return text;
     }
     // Adjacent bold runs ("**a****b**") read as one bold phrase.
-    const clean = node => render(node).replace(/\*\*\*\*/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    // Punctuation left alone on its own line belongs to the line before.
+    const clean = node => render(node).replace(/\*\*\*\*/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n+([.,;:!?])(?=\n|$)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
     const messages = [];
     const siteName = mode ? "Google AI Mode" : "Google AI Overview";
     if (mode) {
