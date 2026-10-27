@@ -7,6 +7,7 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     if (isGemini && /^(?:an?\s+)?(?:ai[- ]generated(?:\s+image)?|generated\s+(?:image|by\s+gemini)|image\s+generated\s+by\s+(?:ai|gemini))[.!]?$/i.test(alt)) return "Image";
     return label(alt) || "Image";
   }
+  const QUERY = '[jsname="eFVkfb"], [jsname="y5v2y"]';
   function isGoogleSearch(href) {
     try { const u = new URL(href); return /^(www\.)?google\.com$/.test(u.hostname) && /^\/(search|aimode)\/?$/.test(u.pathname); }
     catch { return false; }
@@ -92,7 +93,9 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       const turns = [...doc.querySelectorAll('[jsname="RH7zg"]')];
       if (!turns.length) throw new Error("AI Mode conversation has not loaded, or its layout is unsupported.");
       for (const turn of turns) {
-        const query = turn.querySelector('[jsname="eFVkfb"]');
+        // Desktop wraps the question in eFVkfb; the mobile page uses a
+        // y5v2y heading instead.
+        const query = turn.querySelector(QUERY);
         const answer = turn.querySelector('[data-container-id="main-col"], [jsname="KFl8ub"]');
         if (!query || !answer || answer.querySelector('[data-complete="false"]') || !clean(answer)) throw new Error("An AI Mode turn is incomplete. Wait for the response to finish and retry.");
         messages.push({ role: "## You", text: query.textContent.trim() }, { role: `## ${siteName}`, text: clean(answer) });
@@ -128,7 +131,7 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
         scroll.scrollTop = i < 12 ? 0 : scroll.scrollHeight;
         await wait();
         const data = extractGoogle(doc, href, options);
-        for (const query of doc.querySelectorAll('[jsname="RH7zg"] [jsname="eFVkfb"]')) observedQueries.add(query);
+        for (const turn of doc.querySelectorAll('[jsname="RH7zg"]')) { const query = turn.querySelector(QUERY); if (query) observedQueries.add(query); }
         const signature = JSON.stringify(data.messages);
         stable = signature === last ? stable + 1 : 0;
         last = signature;
