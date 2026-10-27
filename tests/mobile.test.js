@@ -53,6 +53,18 @@ it("saves a mobile Google AI Mode conversation as the extension's Markdown", asy
   expect(result.elapsed).toBe(0);
 });
 
+// Measured in iPhone Safari: one AI Mode answer carried a 412,215 character
+// inline JPEG, so the Markdown handed to Shortcuts was 416 KB.
+it("keeps inline pictures out of the Markdown so Shortcuts gets a small result", async () => {
+  const inline = `data:image/jpeg;base64,${"A".repeat(412215)}`;
+  const html = `<div jsname="RH7zg"><span jsname="y5v2y">How do heat pumps work?</span><div data-container-id="main-col"><p>They move heat.</p><img src="${inline}" alt="Heat pump diagram"><img src="https://encrypted-tbn1.gstatic.com/images?q=tbn:x" alt="Outdoor unit"></div></div>`;
+  const result = await runOnPage(html, "https://www.google.com/search?q=heat+pumps&udm=50");
+  expect(result.error).toBeUndefined();
+  expect(result.elapsed).toBe(0);
+  expect(result.markdown.length).toBeLessThan(1000);
+  expect(result.markdown).toContain("They move heat.\n\n[Image: Heat pump diagram]\n\n![Outdoor unit](https://encrypted-tbn1.gstatic.com/images?q=tbn:x)");
+});
+
 // Google expands the overview a moment after the tap, and its "Show more"
 // button keeps aria-expanded="false" afterwards, as on the live mobile page.
 it("expands a collapsed AI Overview and saves all of it well inside the Shortcuts time limit", async () => {

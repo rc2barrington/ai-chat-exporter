@@ -80,6 +80,14 @@ describe("Google Search adapters", () => {
     expect(withoutMedia.remoteQueue).toEqual([]);
     expect(withoutMedia.messages[1].text).toContain("https://example.com/photo.jpg");
   });
+  it("names inline data: pictures instead of pasting them when media files are not saved", () => {
+    const inline = `data:image/jpeg;base64,${"A".repeat(400000)}`;
+    const doc = documentFor(turn("Images", `<p>Diagram below.</p><img src="${inline}" alt="Heat pump diagram">`));
+    const withoutMedia = adapters.extractGoogle(doc, "https://www.google.com/search?udm=50", { includeMedia: false }).messages[1].text;
+    expect(withoutMedia).toBe("Diagram below.\n\n[Image: Heat pump diagram]");
+    const withMedia = adapters.extractGoogle(doc, "https://www.google.com/search?udm=50");
+    expect(withMedia.remoteQueue[0]).toMatchObject({ url: inline, filename: "google-image-1.jpeg" });
+  });
   it("captures overview viewer images with original source attribution and a rendered fallback", () => {
     const doc = documentFor('<div id="m-x-content"><div jsname="KFl8ub"><div role="button" data-im=""><img alt="Museum photo" src="https://www.gstatic.com/thumb.jpg"></div></div></div>');
     doc.querySelector("[data-im]").setAttribute("data-im", JSON.stringify([0, "id", [], ["https://museum.test/original.jpg"], { "2003": [null, null, "https://museum.test/article"] }]));
