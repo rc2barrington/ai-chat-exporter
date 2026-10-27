@@ -27,7 +27,7 @@ for (const directory of ["dist", "server", "src/parsers"]) await addTree(local, 
 local.file("ai-chat-exporter-local/src/appConfig.js", await readFile("src/appConfig.js"));
 local.file("ai-chat-exporter-local/dist/downloads/ai-chat-exporter-extension.zip", await readFile(path.join(output, "ai-chat-exporter-extension.zip")));
 local.file("ai-chat-exporter-local/Open AI Chat Exporter.command", await readFile("Open AI Chat Exporter.command"), { unixPermissions: "100755" });
-local.file("ai-chat-exporter-local/START HERE.txt", `AI Chat Exporter ${VERSION}\n\nUnzip this folder. Double-click Open AI Chat Exporter.command. Requires Node.js 22.13 or newer: https://nodejs.org/en/download\n\nThe app runs only on this computer. Choose ${localSources().map(s => SOURCE_NAMES[s]).join(", ")} to find saved chats. No terminal commands or npm install are needed. Keep the launcher window open while using the app.\n`);
+local.file("ai-chat-exporter-local/START HERE.txt", `AI Chat Exporter ${VERSION}\n\nUnzip this folder. Double-click Open AI Chat Exporter.command. Requires Node.js 22.15 or newer: https://nodejs.org/en/download\n\nThe app runs only on this computer. Choose ${localSources().map(s => SOURCE_NAMES[s]).join(", ")} to find saved chats. No terminal commands or npm install are needed. Keep the launcher window open while using the app.\n`);
 globalThis.AIChatExporterCore.stampZip(local);
 await writeFile(path.join(output, "ai-chat-exporter-local.zip"), await local.generateAsync({ type: "nodebuffer", platform: "UNIX", compression: "DEFLATE" }));
 console.log("Built extension and local app downloads with current file and folder timestamps.");

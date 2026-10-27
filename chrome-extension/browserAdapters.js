@@ -2,11 +2,13 @@
 globalThis.AIChatExporterBrowserAdapters = (() => {
   const label = text => String(text || "").replace(/[[\]\r\n]/g, " ").trim();
   function imageLabel(image, isGemini = false) {
-    const alt = (image.getAttribute("alt") || "").trim();
+    // Google puts <b> highlighting inside image descriptions.
+    const alt = (image.getAttribute("alt") || "").replace(/<\/?[a-z][^>]*>/gi, "").trim();
     // Generic accessibility labels are not evidence of image provenance.
     if (isGemini && /^(?:an?\s+)?(?:ai[- ]generated(?:\s+image)?|generated\s+(?:image|by\s+gemini)|image\s+generated\s+by\s+(?:ai|gemini))[.!]?$/i.test(alt)) return "Image";
     return label(alt) || "Image";
   }
+  const QUERY = '[jsname="eFVkfb"], [jsname="y5v2y"]';
   function isGoogleSearch(href) {
     try { const u = new URL(href); return /^(www\.)?google\.com$/.test(u.hostname) && /^\/(search|aimode)\/?$/.test(u.pathname); }
     catch { return false; }
@@ -30,8 +32,13 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       const tag = node.tagName.toLowerCase();
       // Google's image viewer is a button, but its picture is answer content.
       if (node.matches('[data-im][role="button"]')) return [...node.querySelectorAll("img")].map(render).join("\n");
+      // A tappable term inside a sentence (an unlabelled span button) is text.
+      if (tag === "span" && node.getAttribute("role") === "button" && !node.hasAttribute("aria-label")) return [...node.childNodes].map(render).join("");
       if (["script", "style", "svg", "button", "input", "textarea", "noscript"].includes(tag) ||
           node.matches('[hidden],[role="button"],[role="checkbox"],[role="dialog"],[aria-hidden="true"],[data-container-id="rhs-col"],[data-xid="Gd7Hsc"]') ||
+          // The mobile page lists source cards inside the answer; desktop shows
+          // them in the sidebar (rhs-col). Answer lists are ul/ol elements.
+          (node.matches('[role="list"]') && !/^(ul|ol)$/.test(tag)) ||
           /(?:^|;)\s*display\s*:\s*none\b/i.test(node.getAttribute("style") || "")) return "";
       if (tag === "img") {
         const alt = imageLabel(node);
@@ -41,6 +48,8 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
         const src = link(descriptor?.[3]?.[0]) || displayed;
         const sourceUrl = link(descriptor?.[4]?.["2003"]?.[2]);
         if (!src || /favicon|logo|icon/i.test(alt) || (node.getAttribute("width") && Number(node.getAttribute("width")) <= 32)) return "";
+        // A tiny inline GIF is a placeholder for an image that has not loaded.
+        if (/^data:image\/gif/i.test(src) && src.length < 512) return "";
         let target = src;
         if (includeMedia) {
           if (!media.has(src)) {
@@ -83,7 +92,9 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       if (["div", "section", "ul", "ol"].includes(tag)) return "\n" + text + "\n";
       return text;
     }
-    const clean = node => render(node).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    // Adjacent bold runs ("**a****b**") read as one bold phrase.
+    // Punctuation left alone on its own line belongs to the line before.
+    const clean = node => render(node).replace(/\*\*\*\*/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n+([.,;:!?])(?=\n|$)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
     const messages = [];
     const siteName = mode ? "Google AI Mode" : "Google AI Overview";
     if (mode) {
@@ -92,7 +103,9 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
       const turns = [...doc.querySelectorAll('[jsname="RH7zg"]')];
       if (!turns.length) throw new Error("AI Mode conversation has not loaded, or its layout is unsupported.");
       for (const turn of turns) {
-        const query = turn.querySelector('[jsname="eFVkfb"]');
+        // Desktop wraps the question in eFVkfb; the mobile page uses a
+        // y5v2y heading instead.
+        const query = turn.querySelector(QUERY);
         const answer = turn.querySelector('[data-container-id="main-col"], [jsname="KFl8ub"]');
         if (!query || !answer || answer.querySelector('[data-complete="false"]') || !clean(answer)) throw new Error("An AI Mode turn is incomplete. Wait for the response to finish and retry.");
         messages.push({ role: "## You", text: query.textContent.trim() }, { role: `## ${siteName}`, text: clean(answer) });
@@ -118,17 +131,22 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     });
     const scroll = doc.scrollingElement || doc.documentElement;
     const original = scroll.scrollTop;
+    // An AI Overview starts collapsed behind "Show more", and Google marks the
+    // collapsed part aria-hidden until it is expanded. Expand it once. Doing so
+    // adds a #fragment to the address, which is not a different page.
+    for (const button of doc.querySelectorAll('[role="button"][aria-expanded="false"][aria-controls="m-x-content"]')) button.click?.();
+    const samePage = (a, b) => String(a).split("#")[0] === String(b).split("#")[0];
     const observedQueries = new Set();
     let last = "", stable = 0;
     try {
       // No tab activation, window movement, or clipboard dependency.
       for (let i = 0; i < 32; i++) {
         if (signal?.aborted) throw cancelled();
-        if (doc.location?.href && doc.location.href !== href) throw new Error("The Google page changed during export. Export the intended conversation again.");
+        if (doc.location?.href && !samePage(doc.location.href, href)) throw new Error("The Google page changed during export. Export the intended conversation again.");
         scroll.scrollTop = i < 12 ? 0 : scroll.scrollHeight;
         await wait();
         const data = extractGoogle(doc, href, options);
-        for (const query of doc.querySelectorAll('[jsname="RH7zg"] [jsname="eFVkfb"]')) observedQueries.add(query);
+        for (const turn of doc.querySelectorAll('[jsname="RH7zg"]')) { const query = turn.querySelector(QUERY); if (query) observedQueries.add(query); }
         const signature = JSON.stringify(data.messages);
         stable = signature === last ? stable + 1 : 0;
         last = signature;
