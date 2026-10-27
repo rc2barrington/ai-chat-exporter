@@ -132,9 +132,7 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     // An AI Overview starts collapsed behind "Show more", and Google marks the
     // collapsed part aria-hidden until it is expanded. Expand it once. Doing so
     // adds a #fragment to the address, which is not a different page.
-    for (const button of doc.querySelectorAll('#m-x-content [role="button"][aria-expanded="false"]')) {
-      if (/^\s*show more\s*$/i.test(button.textContent || "")) button.click?.();
-    }
+    for (const button of doc.querySelectorAll('[role="button"][aria-expanded="false"][aria-controls="m-x-content"]')) button.click?.();
     const samePage = (a, b) => String(a).split("#")[0] === String(b).split("#")[0];
     const observedQueries = new Set();
     let last = "", stable = 0;

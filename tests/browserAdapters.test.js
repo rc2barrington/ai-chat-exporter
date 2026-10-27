@@ -46,7 +46,7 @@ describe("Google Search adapters", () => {
       const doc = documentFor('<div id="m-x-content"><div data-container-id="main-col"><p>The sky is blue because of <strong>Rayleigh scattering</strong>.</p>' +
         '<div id="rest" aria-hidden="true"><ul><li><strong>Short waves:</strong> blue scatters most.</li></ul></div>' +
         '<div role="list"><div role="listitem"><a href="https://www.google.com/goto?url=x">NASA Space Place</a><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></div></div>' +
-        '<div role="button" aria-expanded="false"><span>Show more</span></div></div></div>');
+        '</div></div><div role="button" aria-expanded="false" aria-controls="m-x-content"><span>Show more</span></div>');
       doc.querySelector('[role="button"]').addEventListener('click', () => doc.querySelector('#rest').removeAttribute('aria-hidden'));
       const pending = adapters.exportGoogle(doc, "https://www.google.com/search?q=why+is+the+sky+blue", { includeMedia: false });
       await vi.runAllTimersAsync();
