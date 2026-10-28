@@ -4,14 +4,30 @@
 // formatted like the extension's .md files, for the Shortcut to save.
 // scripts/build-mobile.js places browserAdapters.js above this file.
 //
-// Shortcuts stops this action after a few seconds, so it reads the page as it
-// is instead of waiting for it to settle the way the extension does. A page
-// that is ready is read once, with no timer. Expanding a collapsed AI Overview
-// takes Google a few milliseconds, and an answer still being written gets
-// until LIMIT ms to finish.
+// Safari gives this action two seconds in total: running the script and
+// sending its reply back to Shortcuts. So the script reads the page as it is
+// instead of waiting for it to settle the way the extension does. A page that
+// is ready is read once, with no timer. Expanding a collapsed AI Overview takes
+// Google a few milliseconds, and an answer still being written gets until
+// LIMIT ms to finish.
 (async () => {
-  const LIMIT = 1500;
-  const done = value => (typeof completion === "function" ? completion : console.log)(JSON.stringify(value));
+  const LIMIT = 700;
+  // Apple's wrapper for this action (ActionExtension.js in the Shortcuts app)
+  // sends the page's full HTML back with every completion() result. Google's
+  // pages are several MB of HTML, which can use up the two seconds on their
+  // own, so while the result is handed over the page HTML reads as empty to
+  // the wrapper. The page itself is untouched, and outerHTML works normally
+  // again as soon as completion() returns.
+  const done = value => {
+    const send = typeof completion === "function" ? completion : console.log;
+    const root = document.documentElement;
+    let hidden = false;
+    try {
+      Object.defineProperty(root, "outerHTML", { configurable: true, get: () => "" });
+      hidden = true;
+    } catch { /* The page HTML is sent along as before. */ }
+    try { send(JSON.stringify(value)); } finally { if (hidden) delete root.outerHTML; }
+  };
   try {
     const adapters = globalThis.AIChatExporterBrowserAdapters;
     // Expanding an AI Overview adds a #fragment, so keep the address from now.
