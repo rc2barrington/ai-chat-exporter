@@ -50,12 +50,18 @@ export function buildShortcutPlist(script = buildMobileScript()) {
       getValue("markdown", ids.markdown),
       getValue("filename", ids.filename),
       action("setitemname", { UUID: ids.named, WFInput: attachment(value("markdown")), WFName: tokenText(value("filename")), WFDontIncludeFileExtension: true }),
-      // Saved straight into iCloud Drive › Shortcuts. With "Ask Where to Save",
-      // iOS 26 opens a folder picker from the Share menu that starts on an
-      // empty Recents list with a greyed-out Open button, and the Shortcut
-      // waits on it with no time limit.
-      action("documentpicker.save", { UUID: ids.saved, WFInput: attachment(output(ids.named, "Renamed Item")), WFAskWhereToSave: false }),
-      action("notification", { WFNotificationActionTitle: "Saved to Files", WFNotificationActionBody: textWith("", value("filename"), " is in iCloud Drive › Shortcuts.") }),
+      // Saved straight into Downloads, where Safari's own downloads go. With
+      // "Ask Where to Save", iOS 26 opens a folder picker from the Share menu
+      // that starts on an empty Recents list with a greyed-out Open button,
+      // and the Shortcut waits on it with no time limit. Without a folder it
+      // saves to iCloud Drive › Shortcuts. The "Downloads" location type
+      // (WFDownloadsFileLocation in WorkflowKit) is not tied to one device: it
+      // resolves to iCloud Drive › Downloads on the phone that runs it.
+      action("documentpicker.save", { UUID: ids.saved, WFInput: attachment(output(ids.named, "Renamed Item")), WFAskWhereToSave: false,
+        WFFolder: { fileLocation: { WFFileLocationType: "Downloads", relativeSubpath: "" }, filename: "Downloads", displayName: "Downloads" } }),
+      // An alert, not a notification: notifications need a permission the
+      // Shortcuts app may not have, and then the run ends in an error.
+      action("alert", { WFAlertActionTitle: "Saved to Downloads", WFAlertActionMessage: textWith("", value("filename"), " is in Files › iCloud Drive › Downloads."), WFAlertActionCancelButtonShown: false }),
       action("conditional", { UUID: ids.endIf, GroupingIdentifier: ids.group, WFControlFlowMode: 2 }),
     ],
     WFWorkflowClientVersion: "4711.1.1",
