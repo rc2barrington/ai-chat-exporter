@@ -65,6 +65,29 @@ it("keeps inline pictures out of the Markdown so Shortcuts gets a small result",
   expect(result.markdown).toContain("They move heat.\n\n[Image: Heat pump diagram]\n\n![Outdoor unit](https://encrypted-tbn1.gstatic.com/images?q=tbn:x)");
 });
 
+// Replays ActionExtension.js from the iOS 26 Shortcuts app: the script becomes
+// the body of new Function("completion", script), and every completion() reply
+// also carries the page's full HTML. Safari allows the whole round trip two
+// seconds, and Google's AI Mode page measured 3.8 MB of HTML in iPhone Safari.
+it("keeps Apple's reply to the result, not the whole page, and leaves the page as it was", () => {
+  const filler = `<script>${"x".repeat(3_000_000)}</script>`;
+  const { document } = parseHTML(`<!DOCTYPE html><html><head>${filler}</head><body><div jsname="RH7zg"><span jsname="y5v2y">How do heat pumps work?</span><div data-container-id="main-col"><p>They move heat.</p></div></div></body></html>`);
+  const replies = [];
+  const context = { document, location: { href: "https://www.google.com/search?q=heat+pumps&udm=50" }, URL, JSON, console, Date, setTimeout, clearTimeout, SCRIPT: committed, replies };
+  vm.runInNewContext(`new Function("completion", SCRIPT)(function (result) {
+    var doctype = document.doctype;
+    replies.push({ userResult: JSON.stringify(result), document: (doctype ? "<!DOCTYPE " + doctype.name + ">\\n" : "") + document.documentElement.outerHTML });
+  });`, context);
+  expect(replies).toHaveLength(1);
+  const { markdown } = JSON.parse(JSON.parse(replies[0].userResult));
+  expect(markdown).toContain("## Google AI Mode\n\nThey move heat.");
+  expect(replies[0].document.length).toBeLessThan(100);
+  expect(JSON.stringify(replies[0]).length).toBeLessThan(2000);
+  // The page reads normally again once the reply is sent.
+  expect(document.documentElement.outerHTML.length).toBeGreaterThan(3_000_000);
+  expect(Object.hasOwn(document.documentElement, "outerHTML")).toBe(false);
+});
+
 // Google expands the overview a moment after the tap, and its "Show more"
 // button keeps aria-expanded="false" afterwards, as on the live mobile page.
 it("expands a collapsed AI Overview and saves all of it well inside the Shortcuts time limit", async () => {
@@ -85,11 +108,12 @@ it("explains what to do on a page that is not a Google AI answer", async () => {
   expect((await runOnPage("<p>Hello</p>", "https://example.com/")).error).toMatch(/Google AI Mode or AI Overview/);
   const plain = await runOnPage("<p>Plain results</p>", "https://www.google.com/search?q=x");
   expect(plain.error).toMatch(/No AI Overview/);
-  // An answer that might still be loading gets a short retry, never seconds.
-  expect(plain.elapsed).toBeLessThanOrEqual(1600);
+  // An answer that might still be loading gets a short retry that leaves most
+  // of Safari's two seconds for sending the reply.
+  expect(plain.elapsed).toBeLessThanOrEqual(800);
   const writing = await runOnPage('<div jsname="RH7zg"><span jsname="y5v2y">Q</span><div data-container-id="main-col"><p data-complete="false">Partial</p></div></div>', "https://www.google.com/search?q=x&udm=50");
   expect(writing.error).toMatch(/incomplete/);
-  expect(writing.elapsed).toBeLessThanOrEqual(1600);
+  expect(writing.elapsed).toBeLessThanOrEqual(800);
 });
 
 it("builds a Share Sheet Shortcut for Safari pages that runs the script and saves the file", () => {

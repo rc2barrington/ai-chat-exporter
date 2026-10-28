@@ -92,6 +92,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.12
+
+The iPhone Shortcut still timed out, and the cause was Apple's side of the action, found in the iOS 26 Shortcuts and Safari code. Safari allows "Run JavaScript on Web Page" two seconds for the whole round trip, and Apple's wrapper (ActionExtension.js) sends the page's complete HTML back together with every result. Google's AI Mode page measured 3.8 MB of HTML in iPhone Safari, against 4 KB for the chat itself. While the result is handed over, the script now makes the page HTML read as empty to that wrapper, so the reply is only the chat. The page is not changed. An answer that is still loading now gets 0.7 seconds instead of 1.5 before the Shortcut says so, leaving the rest of the two seconds for the reply.
+
 ## 1.2.11
 
 The iPhone Shortcut still took too long. Measured in iPhone Safari, the script itself finishes in about 40 ms, but Safari on iPhone gets some Google pictures inlined as data: URLs of several hundred KB, and the script pasted them into the Markdown: one short answer came back as 416 KB. When media files are not saved (the iPhone Shortcut, or the extension with media off), such a picture is now written as `[Image: description]`, so that answer is under 1 KB. Pictures saved as files keep the right extension, so an inline JPEG is no longer saved as .png.
