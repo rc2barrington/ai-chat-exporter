@@ -22,7 +22,7 @@ Enable **AI replies only** in the extension's Export Settings, or in Export opti
 
 1. On your iPhone, download [Save Google AI Chat.shortcut](https://rc2barrington.github.io/ai-chat-exporter/downloads/Save%20Google%20AI%20Chat.shortcut), open it and choose **Add Shortcut**.
 2. In Safari, open a Google AI Mode chat or a search with an AI Overview and let the answer finish.
-3. Tap **Share** and choose **Save Google AI Chat**. The first time, allow it to run on google.com. The `.md` file is saved to Files › iCloud Drive › Shortcuts (it syncs to your Mac), and a notification names it.
+3. Tap **Share** and choose **Save Google AI Chat**. The first time, allow it to run on google.com and to save a file. The `.md` file is saved to Files › iCloud Drive › Downloads, next to your Safari downloads, and an alert names it.
 
 The Shortcut runs the extension's Google adapter on the page and saves the same Markdown format, every turn of an AI Mode chat included. Collapsed AI Overviews are expanded first. Images stay as links. It works in Safari, not in the Google app or Chrome for iPhone. Developers rebuild it on a Mac with `node scripts/build-mobile.js` and `node scripts/build-shortcut.js` (Apple's `shortcuts sign` is required).
 
@@ -91,6 +91,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.14
+
+The iPhone Shortcut saved the chat, but into Files › iCloud Drive › Shortcuts, so nothing appeared in Downloads, and it then ended with "This shortcut can't access notifications" because the Shortcuts app had no notification permission. It now saves into Files › iCloud Drive › Downloads, where Safari's own downloads go, using Shortcuts' built-in Downloads location, which works on any iPhone. The confirmation is an alert, which needs no permission. Checked in the iOS 26.5 simulator from Safari's Share menu: the alert appears and the run finishes when you tap OK.
 
 ## 1.2.13
 
