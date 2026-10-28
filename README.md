@@ -22,7 +22,7 @@ Enable **AI replies only** in the extension's Export Settings, or in Export opti
 
 1. On your iPhone, download [Save Google AI Chat.shortcut](https://rc2barrington.github.io/ai-chat-exporter/downloads/Save%20Google%20AI%20Chat.shortcut), open it and choose **Add Shortcut**.
 2. In Safari, open a Google AI Mode chat or a search with an AI Overview and let the answer finish.
-3. Tap **Share**, choose **Save Google AI Chat**, and pick where to keep the `.md` file. The first time, allow it to run on google.com.
+3. Tap **Share** and choose **Save Google AI Chat**. The first time, allow it to run on google.com. The `.md` file is saved to Files › iCloud Drive › Shortcuts (it syncs to your Mac), and a notification names it.
 
 The Shortcut runs the extension's Google adapter on the page and saves the same Markdown format, every turn of an AI Mode chat included. Collapsed AI Overviews are expanded first. Images stay as links. It works in Safari, not in the Google app or Chrome for iPhone. Developers rebuild it on a Mac with `node scripts/build-mobile.js` and `node scripts/build-shortcut.js` (Apple's `shortcuts sign` is required).
 
@@ -91,6 +91,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.13
+
+The iPhone Shortcut could sit for minutes without finishing. The last step asked where to save the file, and from Safari's Share menu iOS 26 shows that as a folder picker that opens on an empty Recents list, with an **Open** button that stays greyed out until a folder is chosen under Browse. The Shortcut waits on it with no time limit. The file is now saved straight into Files › iCloud Drive › Shortcuts, which also syncs to the Mac, and a notification names it. Reproduced in the iOS 26.5 simulator with a copy of the Shortcut whose script step returns a fixed chat: the picker version waited on the picker, and the new version finished in a few seconds.
 
 ## 1.2.12
 

@@ -26,13 +26,15 @@ function plist(value, indent = "") {
 
 const output = (uuid, name) => ({ Type: "ActionOutput", OutputUUID: uuid, OutputName: name });
 const attachment = value => ({ Value: value, WFSerializationType: "WFTextTokenAttachment" });
-const tokenText = value => ({ Value: { string: "￼", attachmentsByRange: { "{0, 1}": value } }, WFSerializationType: "WFTextTokenString" });
+// Text with one variable in it. Ranges count UTF-16 units, like NSString.
+const textWith = (before, value, after) => ({ Value: { string: `${before}￼${after}`, attachmentsByRange: { [`{${before.length}, 1}`]: value } }, WFSerializationType: "WFTextTokenString" });
+const tokenText = value => textWith("", value, "");
 const action = (id, parameters) => ({ WFWorkflowActionIdentifier: `is.workflow.actions.${id}`, WFWorkflowActionParameters: parameters });
 
 export function buildShortcutPlist(script = buildMobileScript()) {
   const ids = { js: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A01", dict: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A02", error: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A03",
     markdown: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A04", filename: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A05", named: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A06",
-    endIf: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A07", group: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A08" };
+    endIf: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A07", group: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A08", saved: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A09" };
   const value = key => output(key === "error" ? ids.error : key === "markdown" ? ids.markdown : ids.filename, "Dictionary Value");
   const getValue = (key, uuid) => action("getvalueforkey", { UUID: uuid, WFGetDictionaryValueType: "Value", WFDictionaryKey: key, WFInput: attachment(output(ids.dict, "Dictionary")) });
   const workflow = {
@@ -48,7 +50,12 @@ export function buildShortcutPlist(script = buildMobileScript()) {
       getValue("markdown", ids.markdown),
       getValue("filename", ids.filename),
       action("setitemname", { UUID: ids.named, WFInput: attachment(value("markdown")), WFName: tokenText(value("filename")), WFDontIncludeFileExtension: true }),
-      action("documentpicker.save", { WFInput: attachment(output(ids.named, "Renamed Item")), WFAskWhereToSave: true }),
+      // Saved straight into iCloud Drive › Shortcuts. With "Ask Where to Save",
+      // iOS 26 opens a folder picker from the Share menu that starts on an
+      // empty Recents list with a greyed-out Open button, and the Shortcut
+      // waits on it with no time limit.
+      action("documentpicker.save", { UUID: ids.saved, WFInput: attachment(output(ids.named, "Renamed Item")), WFAskWhereToSave: false }),
+      action("notification", { WFNotificationActionTitle: "Saved to Files", WFNotificationActionBody: textWith("", value("filename"), " is in iCloud Drive › Shortcuts.") }),
       action("conditional", { UUID: ids.endIf, GroupingIdentifier: ids.group, WFControlFlowMode: 2 }),
     ],
     WFWorkflowClientVersion: "4711.1.1",

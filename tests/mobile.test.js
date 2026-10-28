@@ -118,7 +118,12 @@ it("explains what to do on a page that is not a Google AI answer", async () => {
 
 it("builds a Share Sheet Shortcut for Safari pages that runs the script and saves the file", () => {
   const xml = buildShortcutPlist("SCRIPT & <TEXT>");
-  for (const id of ["runjavascriptonwebpage", "detect.dictionary", "getvalueforkey", "conditional", "alert", "exit", "setitemname", "documentpicker.save"]) expect(xml).toContain(`is.workflow.actions.${id}`);
+  for (const id of ["runjavascriptonwebpage", "detect.dictionary", "getvalueforkey", "conditional", "alert", "exit", "setitemname", "documentpicker.save", "notification"]) expect(xml).toContain(`is.workflow.actions.${id}`);
+  // No folder picker: from Safari's Share menu iOS 26 waits on it with no time
+  // limit. The file goes straight to iCloud Drive › Shortcuts.
+  expect(xml).toMatch(/<key>WFAskWhereToSave<\/key>\s*<false\/>/);
+  expect(xml).not.toMatch(/<key>WFAskWhereToSave<\/key>\s*<true\/>/);
+  expect(xml).toContain("<string>￼ is in iCloud Drive › Shortcuts.</string>");
   expect(xml).toContain("<string>WFSafariWebPageContentItem</string>");
   expect(xml).toContain("<string>ActionExtension</string>");
   expect(xml).toContain("SCRIPT &amp; &lt;TEXT&gt;");
