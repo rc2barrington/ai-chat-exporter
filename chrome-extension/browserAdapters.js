@@ -9,6 +9,28 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     return label(alt) || "Image";
   }
   const QUERY = '[jsname="eFVkfb"], [jsname="y5v2y"]';
+  const ANSWER = '[data-container-id="main-col"], [jsname="KFl8ub"]';
+  // AI Mode turns in page order: each question with the first answer after
+  // it. A turn asked live gets its own RH7zg block, but a chat reopened from
+  // history puts every earlier turn inside one RH7zg block, so the blocks
+  // cannot be counted as turns. Desktop nests a y5v2y copy of the question
+  // inside eFVkfb, and KFl8ub inside main-col, so only the first question and
+  // the first answer of each turn count. The RHS column repeats source
+  // snippets, not turns.
+  function googleTurns(doc) {
+    const turns = [];
+    for (const node of doc.querySelectorAll(`${QUERY}, ${ANSWER}`)) {
+      if (node.closest('[data-container-id="rhs-col"]')) continue;
+      const turn = turns[turns.length - 1];
+      if (node.matches(QUERY)) {
+        if (!turn || turn.answer) turns.push({ query: node, answer: null });
+      } else if (!turn || turn.answer) {
+        // An answer with no question before it: a layout this does not know.
+        if (!turn || !turn.answer.contains(node)) turns.push({ query: null, answer: node });
+      } else turn.answer = node;
+    }
+    return turns;
+  }
   function isGoogleSearch(href) {
     try { const u = new URL(href); return /^(www\.)?google\.com$/.test(u.hostname) && /^\/(search|aimode)\/?$/.test(u.pathname); }
     catch { return false; }
@@ -102,17 +124,12 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     const messages = [];
     const siteName = mode ? "Google AI Mode" : "Google AI Overview";
     if (mode) {
-      // Each live RH7zg block owns a query and main answer column. The RHS
-      // contains repeated source snippets, not additional assistant turns.
-      const turns = [...doc.querySelectorAll('[jsname="RH7zg"]')];
+      const turns = googleTurns(doc);
       if (!turns.length) throw new Error("AI Mode conversation has not loaded, or its layout is unsupported.");
-      for (const turn of turns) {
-        // Desktop wraps the question in eFVkfb; the mobile page uses a
-        // y5v2y heading instead.
-        const query = turn.querySelector(QUERY);
-        const answer = turn.querySelector('[data-container-id="main-col"], [jsname="KFl8ub"]');
-        if (!query || !answer || answer.querySelector('[data-complete="false"]') || !clean(answer)) throw new Error("An AI Mode turn is incomplete. Wait for the response to finish and retry.");
-        messages.push({ role: "## You", text: query.textContent.trim() }, { role: `## ${siteName}`, text: clean(answer) });
+      for (const { query, answer } of turns) {
+        const text = answer && !answer.querySelector('[data-complete="false"]') ? clean(answer) : "";
+        if (!query || !text) throw new Error("An AI Mode turn is incomplete. Wait for the response to finish and retry.");
+        messages.push({ role: "## You", text: query.textContent.trim() }, { role: `## ${siteName}`, text });
       }
     } else {
       const answer = doc.querySelector('#m-x-content [data-container-id="main-col"], #m-x-content [jsname="KFl8ub"]');
@@ -150,7 +167,7 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
         scroll.scrollTop = i < 12 ? 0 : scroll.scrollHeight;
         await wait();
         const data = extractGoogle(doc, href, options);
-        for (const turn of doc.querySelectorAll('[jsname="RH7zg"]')) { const query = turn.querySelector(QUERY); if (query) observedQueries.add(query); }
+        for (const { query } of googleTurns(doc)) if (query) observedQueries.add(query);
         const signature = JSON.stringify(data.messages);
         stable = signature === last ? stable + 1 : 0;
         last = signature;
