@@ -26,6 +26,40 @@ describe("Google Search adapters", () => {
     const result = adapters.extractGoogle(doc, "https://www.google.com/search?udm=50&q=Follow-up");
     expect(result.messages.map(m => m.text)).toEqual(["First question", "Same answer\n\n[Source](<https://example.com/source>)", "Follow-up", "Same answer"]);
   });
+  // A chat reopened from history puts every earlier turn inside one RH7zg
+  // block, each in its own CS7uPe box, on desktop and on mobile alike. Desktop
+  // nests a y5v2y copy of the question inside eFVkfb and KFl8ub inside
+  // main-col. A turn asked after reopening gets its own RH7zg block again.
+  // (Measured on google.com, October 2026.)
+  describe("chats reopened from history", () => {
+    const box = (question, answer, desktop) => `<div jsname="CS7uPe" data-complete="true">` +
+      (desktop ? `<div jsname="eFVkfb"><span jsname="y5v2y">${question}</span></div>` : `<span role="heading"><span jsname="y5v2y">${question}</span></span>`) +
+      `<div data-container-id="main-col"><div jsname="KFl8ub">${answer}</div></div>` +
+      (desktop ? `<div data-container-id="rhs-col"><span jsname="y5v2y">Sidebar question</span><div jsname="KFl8ub">Sidebar snippet</div></div>` : "") + "</div>";
+    const reopened = (count, desktop) => `<div jsname="RH7zg">${Array.from({ length: count }, (_, i) => box(`Question ${i + 1}`, `<p>Answer ${i + 1}</p>`, desktop)).join("")}</div>`;
+    const texts = result => result.messages.map(m => m.text);
+    const expected = count => Array.from({ length: count }, (_, i) => [`Question ${i + 1}`, `Answer ${i + 1}`]).flat();
+
+    it("exports every turn of a reopened mobile chat, not only the first", () => {
+      const result = adapters.extractGoogle(documentFor(reopened(60)), "https://www.google.com/search?q=Question+1&udm=50", { includeMedia: false });
+      expect(result.messageCount).toBe(120);
+      expect(texts(result)).toEqual(expected(60));
+      expect(result.title).toBe("Question 1");
+    });
+    it("reads each desktop turn once and leaves out the sidebar", () => {
+      const result = adapters.extractGoogle(documentFor(reopened(3, true)), "https://www.google.com/search?udm=50", { includeMedia: false });
+      expect(texts(result)).toEqual(expected(3));
+      expect(texts(result).join(" ")).not.toMatch(/Sidebar/);
+    });
+    it("keeps the reopened turns and a turn asked afterwards in order", () => {
+      const html = reopened(2) + turn("Question 3", "<p>Answer 3</p>");
+      expect(texts(adapters.extractGoogle(documentFor(html), "https://www.google.com/search?udm=50", { includeMedia: false }))).toEqual(expected(3));
+    });
+    it("refuses an answer with no question instead of dropping it", () => {
+      const html = `<div jsname="RH7zg"><div data-container-id="main-col"><p>Orphan answer</p></div></div>` + reopened(1);
+      expect(() => adapters.extractGoogle(documentFor(html), "https://www.google.com/search?udm=50")).toThrow(/incomplete/);
+    });
+  });
   // Google's mobile page (iPhone Safari) puts the question in a y5v2y
   // heading instead of eFVkfb.
   it("reads AI Mode on Google's mobile page, with clean image labels and bold text", () => {

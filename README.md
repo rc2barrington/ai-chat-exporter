@@ -92,6 +92,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.15
+
+Google AI Mode chats reopened from history exported only their first question and answer, on iPhone and in the Chrome extension alike. A turn asked live gets its own block on Google's page (`jsname="RH7zg"`), and the exporter counted those blocks as turns. But when a chat is reopened, Google puts every earlier turn inside one such block, and only the first question and answer in it were read. Turns are now read in page order instead: each question with the first answer after it. On desktop, the second copy of each question that Google nests inside the first, and the sidebar snippets, are skipped. Checked on google.com with a reopened chat (mobile and desktop layouts) and on a 100-turn copy of it (76,751 elements): the iPhone script saved all 100 turns in about 0.2 seconds.
+
 ## 1.2.14
 
 The iPhone Shortcut saved the chat, but into Files › iCloud Drive › Shortcuts, so nothing appeared in Downloads, and it then ended with "This shortcut can't access notifications" because the Shortcuts app had no notification permission. It now saves into Files › iCloud Drive › Downloads, where Safari's own downloads go, using Shortcuts' built-in Downloads location, which works on any iPhone. The confirmation is an alert, which needs no permission. Checked in the iOS 26.5 simulator from Safari's Share menu: the alert appears and the run finishes when you tap OK.

@@ -53,6 +53,19 @@ it("saves a mobile Google AI Mode conversation as the extension's Markdown", asy
   expect(result.elapsed).toBe(0);
 });
 
+// A chat reopened from history keeps every earlier turn inside one RH7zg
+// block. 1.2.14 saved only the first question and answer of such a chat.
+it("saves every turn of a chat reopened from history", async () => {
+  const box = i => `<div jsname="CS7uPe" data-complete="true"><span role="heading"><span jsname="y5v2y">Question ${i}</span></span><div data-container-id="main-col"><div jsname="KFl8ub"><p>Answer ${i}</p></div></div></div>`;
+  const html = `<div jsname="RH7zg">${Array.from({ length: 80 }, (_, i) => box(i + 1)).join("")}</div>`;
+  const result = await runOnPage(html, "https://www.google.com/search?q=Question+1&udm=50");
+  expect(result.error).toBeUndefined();
+  expect(result.elapsed).toBe(0);
+  expect(result.markdown).toContain("message_count: 160\n");
+  expect(result.markdown.match(/^## You$/gm)).toHaveLength(80);
+  expect(result.markdown).toContain("## You\n\nQuestion 80\n\n---\n\n## Google AI Mode\n\nAnswer 80");
+});
+
 // Measured in iPhone Safari: one AI Mode answer carried a 412,215 character
 // inline JPEG, so the Markdown handed to Shortcuts was 416 KB.
 it("keeps inline pictures out of the Markdown so Shortcuts gets a small result", async () => {
