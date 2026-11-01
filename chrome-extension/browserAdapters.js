@@ -120,7 +120,10 @@ globalThis.AIChatExporterBrowserAdapters = (() => {
     }
     // Adjacent bold runs ("**a****b**") read as one bold phrase.
     // Punctuation left alone on its own line belongs to the line before.
-    const clean = node => render(node).replace(/\*\*\*\*/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n+([.,;:!?])(?=\n|$)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
+    // The lookbehinds let a match start only where a run of spaces or line
+    // breaks starts. Without them each run is rescanned from every position
+    // in it, and 20,000 empty lines took Safari's JavaScript engine 2.7 s.
+    const clean = node => render(node).replace(/\*\*\*\*/g, "").replace(/(?<![ \t])[ \t]+\n/g, "\n").replace(/(?<!\n)\n+([.,;:!?])(?=\n|$)/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
     const messages = [];
     const siteName = mode ? "Google AI Mode" : "Google AI Overview";
     if (mode) {

@@ -26,42 +26,30 @@ function plist(value, indent = "") {
 
 const output = (uuid, name) => ({ Type: "ActionOutput", OutputUUID: uuid, OutputName: name });
 const attachment = value => ({ Value: value, WFSerializationType: "WFTextTokenAttachment" });
-// Text with one variable in it. Ranges count UTF-16 units, like NSString.
-const textWith = (before, value, after) => ({ Value: { string: `${before}￼${after}`, attachmentsByRange: { [`{${before.length}, 1}`]: value } }, WFSerializationType: "WFTextTokenString" });
-const tokenText = value => textWith("", value, "");
+// Text that is one variable. The range counts UTF-16 units, like NSString.
+const tokenText = value => ({ Value: { string: "￼", attachmentsByRange: { "{0, 1}": value } }, WFSerializationType: "WFTextTokenString" });
 const action = (id, parameters) => ({ WFWorkflowActionIdentifier: `is.workflow.actions.${id}`, WFWorkflowActionParameters: parameters });
 
 export function buildShortcutPlist(script = buildMobileScript()) {
   const ids = { js: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A01", dict: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A02", error: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A03",
-    markdown: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A04", filename: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A05", named: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A06",
-    endIf: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A07", group: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A08", saved: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A09" };
-  const value = key => output(key === "error" ? ids.error : key === "markdown" ? ids.markdown : ids.filename, "Dictionary Value");
-  const getValue = (key, uuid) => action("getvalueforkey", { UUID: uuid, WFGetDictionaryValueType: "Value", WFDictionaryKey: key, WFInput: attachment(output(ids.dict, "Dictionary")) });
+    endIf: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A07", group: "8B0F9C2E-1A6D-4D2B-9F61-3E5A7C1D0A08" };
+  const error = output(ids.error, "Dictionary Value");
   const workflow = {
+    // The script hands the file to Safari, which asks "Do you want to
+    // download?" and saves it in Safari's download folder. The Shortcut only
+    // gets the file name back, or an error to show. Earlier versions carried
+    // the whole chat through Shortcuts to a Save File step; that hung on a
+    // long chat, and with "Ask Where to Save" iOS 26 waited forever on an
+    // empty folder picker.
     WFWorkflowActions: [
       action("runjavascriptonwebpage", { UUID: ids.js, WFInput: attachment({ Type: "ExtensionInput" }), WFJavaScript: script }),
       action("detect.dictionary", { UUID: ids.dict, WFInput: attachment(output(ids.js, "Result of JavaScript")) }),
-      getValue("error", ids.error),
+      action("getvalueforkey", { UUID: ids.error, WFGetDictionaryValueType: "Value", WFDictionaryKey: "error", WFInput: attachment(output(ids.dict, "Dictionary")) }),
       action("conditional", { GroupingIdentifier: ids.group, WFControlFlowMode: 0, WFCondition: 100,
-        WFInput: { Type: "Variable", Variable: attachment(value("error")) } }),
-      action("alert", { WFAlertActionTitle: "Couldn't save this chat", WFAlertActionMessage: tokenText(value("error")), WFAlertActionCancelButtonShown: false }),
-      action("exit", {}),
-      action("conditional", { GroupingIdentifier: ids.group, WFControlFlowMode: 1 }),
-      getValue("markdown", ids.markdown),
-      getValue("filename", ids.filename),
-      action("setitemname", { UUID: ids.named, WFInput: attachment(value("markdown")), WFName: tokenText(value("filename")), WFDontIncludeFileExtension: true }),
-      // Saved straight into Downloads, where Safari's own downloads go. With
-      // "Ask Where to Save", iOS 26 opens a folder picker from the Share menu
-      // that starts on an empty Recents list with a greyed-out Open button,
-      // and the Shortcut waits on it with no time limit. Without a folder it
-      // saves to iCloud Drive › Shortcuts. The "Downloads" location type
-      // (WFDownloadsFileLocation in WorkflowKit) is not tied to one device: it
-      // resolves to iCloud Drive › Downloads on the phone that runs it.
-      action("documentpicker.save", { UUID: ids.saved, WFInput: attachment(output(ids.named, "Renamed Item")), WFAskWhereToSave: false,
-        WFFolder: { fileLocation: { WFFileLocationType: "Downloads", relativeSubpath: "" }, filename: "Downloads", displayName: "Downloads" } }),
+        WFInput: { Type: "Variable", Variable: attachment(error) } }),
       // An alert, not a notification: notifications need a permission the
       // Shortcuts app may not have, and then the run ends in an error.
-      action("alert", { WFAlertActionTitle: "Saved to Downloads", WFAlertActionMessage: textWith("", value("filename"), " is in Files › iCloud Drive › Downloads."), WFAlertActionCancelButtonShown: false }),
+      action("alert", { WFAlertActionTitle: "Couldn't save this chat", WFAlertActionMessage: tokenText(error), WFAlertActionCancelButtonShown: false }),
       action("conditional", { UUID: ids.endIf, GroupingIdentifier: ids.group, WFControlFlowMode: 2 }),
     ],
     WFWorkflowClientVersion: "4711.1.1",
