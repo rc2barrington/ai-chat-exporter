@@ -60,6 +60,17 @@ describe("Google Search adapters", () => {
       expect(() => adapters.extractGoogle(documentFor(html), "https://www.google.com/search?udm=50")).toThrow(/incomplete/);
     });
   });
+  // The text cleanup used to rescan each run of spaces or line breaks from
+  // every position in it: 20,000 empty lines took Safari's JavaScript engine
+  // 2.7 s and 80,000 took 28 s, longer than an iPhone Shortcut may run.
+  it("cleans up long runs of spaces and empty lines quickly, with the same result", () => {
+    const spaces = " ".repeat(50_000);
+    const doc = documentFor(turn("Question", `<p>Before${spaces}middle</p>${"<div></div>".repeat(50_000)}<p>After</p><p>.</p>`));
+    const start = performance.now();
+    const result = adapters.extractGoogle(doc, "https://www.google.com/search?udm=50", { includeMedia: false });
+    expect(performance.now() - start).toBeLessThan(1500);
+    expect(result.messages[1].text).toBe(`Before${spaces}middle\n\nAfter.`);
+  });
   // Google's mobile page (iPhone Safari) puts the question in a y5v2y
   // heading instead of eFVkfb.
   it("reads AI Mode on Google's mobile page, with clean image labels and bold text", () => {

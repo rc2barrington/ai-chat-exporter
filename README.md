@@ -22,9 +22,9 @@ Enable **AI replies only** in the extension's Export Settings, or in Export opti
 
 1. On your iPhone, download [Save Google AI Chat.shortcut](https://rc2barrington.github.io/ai-chat-exporter/downloads/Save%20Google%20AI%20Chat.shortcut), open it and choose **Add Shortcut**.
 2. In Safari, open a Google AI Mode chat or a search with an AI Overview and let the answer finish.
-3. Tap **Share** and choose **Save Google AI Chat**. The first time, allow it to run on google.com and to save a file. The `.md` file is saved to Files › iCloud Drive › Downloads, next to your Safari downloads, and an alert names it.
+3. Tap **Share** and choose **Save Google AI Chat**. The first time, allow it to run on google.com. When Safari asks whether to download the `.md` file, tap **Download**. It goes where your Safari downloads go, normally Files › iCloud Drive › Downloads.
 
-The Shortcut runs the extension's Google adapter on the page and saves the same Markdown format, every turn of an AI Mode chat included. Collapsed AI Overviews are expanded first. Images stay as links. It works in Safari, not in the Google app or Chrome for iPhone. Developers rebuild it on a Mac with `node scripts/build-mobile.js` and `node scripts/build-shortcut.js` (Apple's `shortcuts sign` is required).
+The Shortcut runs the extension's Google adapter on the page and has Safari download the same Markdown format, every turn of an AI Mode chat included. Collapsed AI Overviews are expanded first. Images stay as links. It works in Safari, not in the Google app or Chrome for iPhone. Developers rebuild it on a Mac with `node scripts/build-mobile.js` and `node scripts/build-shortcut.js` (Apple's `shortcuts sign` is required).
 
 ### Local coding chats
 
@@ -91,6 +91,12 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.16
+
+On iPhone, 1.2.15 found every turn of a long reopened AI Mode chat but then never finished: the Shortcut spun in the Dynamic Island and saved nothing. 1.2.14 had saved the same chat, cut to one turn. The Shortcut no longer carries the chat at all. The script hands the Markdown file to Safari, which asks "Do you want to download?" and saves it where Safari downloads go, normally Files › iCloud Drive › Downloads; the Shortcut gets back only the file name, or an error to show. Checked in the iOS 26.5 simulator: a page script that starts a 720 KB download with no tap gets Safari's question, and one tap on **Download** saves the whole file.
+
+The text cleanup that the iPhone script shares with the Chrome extension rescanned every run of spaces or empty lines from each position in it, so the time grew with the square of the run: 20,000 empty lines took Safari's JavaScript engine 2.7 seconds and 80,000 took 28. Each match now starts only where a run starts, which gives the same text (compared on 200,000 random strings) in linear time: 320,000 took 0.12 seconds.
 
 ## 1.2.15
 

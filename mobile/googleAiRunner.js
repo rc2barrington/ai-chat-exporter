@@ -1,7 +1,7 @@
 // Runs inside an iOS Shortcut's "Run JavaScript on Web Page" action on a
 // Google AI Mode or AI Overview page in Safari. It reads the conversation with
-// the same Google adapter as the Chrome extension and returns the Markdown,
-// formatted like the extension's .md files, for the Shortcut to save.
+// the same Google adapter as the Chrome extension, formats it like the
+// extension's .md files, and hands the file to Safari's own download.
 // scripts/build-mobile.js places browserAdapters.js above this file.
 //
 // Safari gives this action two seconds in total: running the script and
@@ -68,8 +68,20 @@
       md += message.role + nl + nl + message.text + nl + nl;
       if (index < data.messages.length - 1) md += "---" + nl + nl;
     });
-    const name = data.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 60) || "chat-export";
-    done({ filename: name + ".md", markdown: md });
+    const filename = (data.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase().slice(0, 60) || "chat-export") + ".md";
+    // Safari saves the file and asks "Do you want to download?", even though
+    // nobody tapped the page. Only the file name goes back to Shortcuts: with
+    // a 50 to 100 turn chat in its result, 1.2.15 spun on the iPhone without
+    // ever finishing, and 1.2.14 saved the same chat cut to one turn. The
+    // blob is not revoked, because Safari reads it only once Download is
+    // tapped.
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([md], { type: "text/markdown" }));
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    done({ filename });
   } catch (error) {
     done({ error: String(error && error.message || error) });
   }
