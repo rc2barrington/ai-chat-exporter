@@ -11,7 +11,7 @@ const ROW = 100, VIEW = 300;
 // A Muse chat in a background tab. Native intersection callbacks never run,
 // so only the helper can render rows or load older history. Older pages take
 // longer than the exporter's old one-second pause, as they do on the real site.
-function fixture({ install = true, total = 12, loaded = 4, page = 4, delay = 3000 } = {}) {
+function fixture({ install = true, total = 12, loaded = 4, page = 4, delay = 3000, limit = Infinity, around = 2, react = false } = {}) {
   const { document, window } = parseHTML('<html><body><div id="feed"><div aria-label="Chat messages"></div><div id="sentinel"></div></div></body></html>');
   const feed = document.querySelector('#feed');
   const list = feed.querySelector('[aria-label="Chat messages"]');
@@ -68,24 +68,53 @@ function fixture({ install = true, total = 12, loaded = 4, page = 4, delay = 300
   };
   add(Array.from({ length: loaded }, (_, i) => total - loaded + i));
 
-  // Muse observes the top sentinel only while older history exists.
-  let first = total - loaded, inFlight = false, history = null;
+  // Muse observes the top sentinel only while older history exists. It also
+  // stops before a page would take it past `limit` messages, and then reports
+  // neither more history nor the start.
+  let first = total - loaded, inFlight = false, history = null, edge = first ? 'more' : 'start';
   const watchHistory = () => {
     history = new context.IntersectionObserver(([entry]) => {
       if (!entry?.isIntersecting || inFlight) return;
+      if (list.children.length + page > limit) { edge = 'limit'; history.disconnect(); return; }
       inFlight = true;
       setTimeout(() => {
         const next = Math.max(0, first - page);
         add(Array.from({ length: first - next }, (_, i) => next + i));
         first = next;
         inFlight = false;
-        if (!first) history.disconnect();
+        if (!first) { edge = 'start'; history.disconnect(); }
       }, delay);
     }, { root: feed, threshold: 0 });
     history.observe(sentinel);
   };
   watchHistory();
-  return { context, document, list, feed, native, telemetry, rowObserver: () => native[0] };
+
+  // Muse's jump for a search result: the messages around a position replace
+  // the loaded ones, older pages load again from there, and a sentinel below
+  // the list marks the newer messages left out. The chat store and these
+  // actions are React context values above the list.
+  const below = document.createElement('div');
+  feed.append(below);
+  below.getBoundingClientRect = () => { const bottom = list.getBoundingClientRect().bottom; return rect(bottom, bottom + 1); };
+  let newer = null;
+  const actions = {
+    jumpToMessage: vi.fn(async (id, seq) => {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      for (const row of [...list.children]) { rows.unobserve(row); impressions.unobserve(row); row.remove(); }
+      first = Math.max(0, seq - around);
+      add(Array.from({ length: Math.min(total, seq + around + 1) - first }, (_, i) => first + i));
+      edge = first ? 'more' : 'start';
+      history.disconnect();
+      if (first) watchHistory();
+      newer ??= new context.IntersectionObserver(() => {}, { root: feed, threshold: 0 });
+      newer.observe(below);
+    }),
+    returnToLatest: vi.fn(async () => { newer?.disconnect(); newer = null; }),
+  };
+  const store = { getState: () => ({ chat: { messageIds: [...list.children].map(row => row.getAttribute('data-message-id')),
+    hasMore: edge === 'more', hasReachedHistoryStart: edge === 'start', oldestSeq: first } }) };
+  if (react) list.__reactFiber$fixture = { memoizedProps: {}, return: { memoizedProps: { value: store }, return: { memoizedProps: { value: actions }, return: null } } };
+  return { context, document, list, feed, native, telemetry, actions, rowObserver: () => native[0] };
 }
 
 it('exports every Muse message with native intersection delivery suspended, waiting out slow history pages', async () => {
@@ -101,6 +130,8 @@ it('exports every Muse message with native intersection delivery suspended, wait
     const result = await pending;
     expect(result.messages.map(m => m.text)).toEqual(Array.from({ length: 30 }, (_, i) => `Message ${i}`));
     expect(logs.join(' ')).toContain('Loading older Muse messages');
+    // This page has no Muse chat store to tell the start from Muse's limit.
+    expect(result.history.basis).toMatch(/could not be checked/);
     expect(telemetry).not.toHaveBeenCalled();
     // Virtualization resumes: the rows far above the restored position unload.
     expect(document.documentElement.hasAttribute('data-ai-exporter-muse-rendered-rows')).toBe(false);
@@ -108,6 +139,58 @@ it('exports every Muse message with native intersection delivery suspended, wait
     expect(feed.scrollTop).toBe(0);
     expect(list.firstElementChild.querySelector('[data-message-accessibility-surrogate]')).not.toBeNull();
     expect(list.lastElementChild.querySelector('[data-message-accessibility-surrogate]')).toBeNull();
+  } finally { vi.useRealTimers(); }
+});
+
+// Muse's page holds at most about 900 messages of a chat. A real 798-message
+// export of a longer chat stopped at that limit, because Muse removes its
+// sentinel there just as it does at the start.
+it('reads a Muse chat past the limit its page holds, one history window at a time', async () => {
+  vi.useFakeTimers();
+  try {
+    const { context, document, actions } = fixture({ total: 30, limit: 12, react: true });
+    const logs = [];
+    const pending = context.AIChatExporterExtraAdapters.exportConversation(document, href, {
+      includeMedia: false, requireBackgroundRendering: true, onProgress: value => logs.push(value),
+    });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(result.messages.map(m => m.text)).toEqual(Array.from({ length: 30 }, (_, i) => `Message ${i}`));
+    // Each window starts just before the oldest message read so far.
+    expect(actions.jumpToMessage.mock.calls).toEqual([18, 12, 6].map(seq => ['ai-chat-exporter-window', seq]));
+    expect(result.history.basis).toMatch(/all 30 Muse message positions .*across 4 history windows\.$/);
+    expect(logs.join(' ')).toContain('Muse keeps about 900 messages loaded at once');
+    // The page goes back to the latest messages afterwards.
+    expect(actions.returnToLatest).toHaveBeenCalledTimes(1);
+    expect(document.documentElement.hasAttribute('data-ai-exporter-muse-edge')).toBe(false);
+    expect(document.documentElement.hasAttribute('data-ai-exporter-muse-jump')).toBe(false);
+  } finally { vi.useRealTimers(); }
+});
+
+it('does not jump in a Muse chat that loads back to its start', async () => {
+  vi.useFakeTimers();
+  try {
+    const { context, document, actions } = fixture({ react: true });
+    const pending = context.AIChatExporterExtraAdapters.exportConversation(document, href, { includeMedia: false, requireBackgroundRendering: true });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+    expect(result.messages).toHaveLength(12);
+    expect(result.history.basis).toBe('Captured all 12 Muse message positions exposed by the conversation page.');
+    expect(actions.jumpToMessage).not.toHaveBeenCalled();
+    expect(actions.returnToLatest).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
+});
+
+it('refuses a Muse export when Muse will not load the part before its limit', async () => {
+  vi.useFakeTimers();
+  try {
+    const { context, document, actions } = fixture({ total: 30, limit: 12, react: true });
+    actions.jumpToMessage.mockImplementation(async () => {});
+    const pending = context.AIChatExporterExtraAdapters.exportConversation(document, href, { includeMedia: false, requireBackgroundRendering: true });
+    const assertion = expect(pending).rejects.toThrow(/after 12, and would not load the part of the chat before them/);
+    await vi.runAllTimersAsync();
+    await assertion;
+    expect(actions.returnToLatest).toHaveBeenCalledTimes(1);
   } finally { vi.useRealTimers(); }
 });
 

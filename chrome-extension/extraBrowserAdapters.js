@@ -407,7 +407,7 @@ globalThis.AIChatExporterExtraAdapters = (() => {
     // list as the sweep moves down. Windows overlap because each scroll step is
     // shorter than the viewport, so a window that shares no message with the
     // list means part of the chat was skipped.
-    let museGap = false;
+    let museGap = false, museWindows = 1, museStart = null;
     const mergeMuseWindow = keys => {
       const anchor = keys.findIndex(key => expectedKeySet.has(key));
       if (anchor < 0) { if (keys.length) museGap = true; return; }
@@ -450,8 +450,38 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       const references = provider === 'Perplexity' ? await collectPerplexityReferences(doc, href, wait, check) : {};
       check();
       const result = renderEntries(ordered, doc, href, { ...options, supplementalFiles: references.files });
-      result.history = { status: 'page-verified', basis: `Captured all ${ordered.length} ${provider} message positions exposed by the conversation page.` };
+      const across = museWindows > 1 ? `, across ${museWindows} history windows` : '';
+      const unchecked = museStart === 'unknown' ? ' Whether Muse held older messages could not be checked.' : '';
+      result.history = { status: 'page-verified', basis: `Captured all ${ordered.length} ${provider} message positions exposed by the conversation page${across}.${unchecked}` };
       return result;
+    };
+    // museBackground.js reads Muse's chat store: "start" when the oldest
+    // message is loaded, "limit" when Muse stopped at its cap of about 900
+    // messages, "more" while older pages remain. Null means no helper, and a
+    // helper from before this check counts as "unknown".
+    const museEdge = () => {
+      dispatch('__aiExporterMuseEdge');
+      const root = doc.documentElement;
+      return root?.getAttribute?.('data-ai-exporter-muse-edge')
+        ?? (root?.hasAttribute?.('data-ai-exporter-muse-rendered-rows') ? 'unknown' : null);
+    };
+    const museOlderWindow = async read => {
+      const fail = () => new Error(`Muse stopped loading older messages after ${read.size}, and would not load the part of the chat before them. No partial conversation was saved.`);
+      progress(`Muse keeps about 900 messages loaded at once. Loading the part before the ${read.size} read so far...`);
+      dispatch('__aiExporterMuseOlderWindow');
+      const started = Date.now();
+      for (;;) {
+        const state = doc.documentElement?.getAttribute?.('data-ai-exporter-muse-jump');
+        if (state === 'done') break;
+        if (state !== 'pending' || Date.now() - started > historyPatience) throw fail();
+        await wait(); check();
+      }
+      // The new window replaces the messages already read.
+      while (!scanEntries().some(item => !read.has(item.key))) {
+        if (Date.now() - started > historyPatience) throw fail();
+        await wait(); check();
+      }
+      museWindows++;
     };
     try {
       // Capture the mounted tail before navigation. Perplexity replaces rows
@@ -496,67 +526,92 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       // Muse loads older history in pages while the top is in view. With the
       // helper, keep going until it reports nothing older remains.
       const settle = provider === 'Muse' && museHistory() === null ? 12 : 4;
-      let stable = 0, last = '', changedAt = Date.now();
-      while (stable < settle || museMore('older')) {
-        check(); await wait(); check();
-        scroll.scrollTop = reverse ? -scroll.scrollHeight : 0;
-        dispatchScroll();
-        const current = scanEntries();
-        const signature = `${scroll.scrollHeight}:${current.length}:${current[0]?.key}:${scroll.scrollTop}`;
-        stable = signature === last ? stable + 1 : 0;
-        last = signature;
-        if (!stable) changedAt = Date.now();
-        if (museMore('older')) {
-          if (Date.now() - changedAt > historyPatience) throw new Error('Muse stopped loading older messages before reaching the start of the chat. No partial conversation was saved.');
-          historyProgress(`Loading older Muse messages: ${current.length} mounted so far...`);
+      // At Muse's limit of about 900 messages, the part read so far is kept
+      // and the window before it is read the same way, back to the start. A
+      // new window ends with some of the oldest messages already read, which
+      // is where the two are joined.
+      let later = [];
+      for (;;) {
+        let stable = 0, last = '', changedAt = Date.now();
+        while (stable < settle || museMore('older')) {
+          check(); await wait(); check();
+          scroll.scrollTop = reverse ? -scroll.scrollHeight : 0;
+          dispatchScroll();
+          const current = scanEntries();
+          const signature = `${scroll.scrollHeight}:${current.length}:${current[0]?.key}:${scroll.scrollTop}`;
+          stable = signature === last ? stable + 1 : 0;
+          last = signature;
+          if (!stable) changedAt = Date.now();
+          if (museMore('older')) {
+            if (Date.now() - changedAt > historyPatience) throw new Error('Muse stopped loading older messages before reaching the start of the chat. No partial conversation was saved.');
+            historyProgress(`Loading older Muse messages: ${current.length} mounted so far...`);
+          }
         }
-      }
-      if (provider === 'Perplexity' && threadRoot) expectedKeys = [...threadRoot.children].map((_, index) => index);
-      else expectedKeys = scanEntries().map(item => item.key);
-      expectedKeySet = new Set(expectedKeys);
-      if (!expectedKeys.length) throw new Error(`No ${provider} messages were found at the start of the chat.`);
-      if (provider === 'Perplexity') progress(`Perplexity thread exposes ${expectedKeys.length} message positions. Initial capture: ${captured.size}; mounted near start: ${scanEntries().length}; scroll position: ${Math.round(scroll.scrollTop)}px; viewport/content: ${Math.round(scroll.clientHeight)}/${Math.round(scroll.scrollHeight)}px.`);
-      // Accessibility surrogates can omit attachment and formatting details,
-      // even in text-only mode. Walk the feed twice before accepting them.
-      const passes = 2;
-      for (let pass = 0; pass < passes; pass++) {
-        scroll.scrollTop = reverse ? -scroll.scrollHeight : 0;
-        dispatchScroll();
-        await wait();
-        let bottomStable = 0, lastState = '', content = '', changedAt = Date.now(), nudgedAt = 0;
-        while (bottomStable < 4) {
-          check(); capture();
-          const atEnd = reverse ? scroll.scrollTop >= -2 : scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
-          // After a jump to the top Muse unloads the newest messages and loads
-          // them back in pages near the bottom. The end is not the end yet.
-          const newer = museMore('newer');
-          const bottom = atEnd && !newer;
-          const signature = `${scroll.scrollTop}:${scroll.scrollHeight}:${captured.size}`;
-          bottomStable = bottom && signature === lastState ? bottomStable + 1 : 0;
-          lastState = signature;
-          const loaded = `${scroll.scrollHeight}:${captured.size}:${expectedKeys.length}`;
-          if (loaded !== content) { content = loaded; changedAt = Date.now(); }
-          else if (atEnd && newer) {
-            if (Date.now() - changedAt > historyPatience) throw new Error('Muse stopped loading newer messages before reaching the end of the chat. No partial conversation was saved.');
-            historyProgress(`Loading newer Muse messages: ${captured.size} captured so far...`);
-            // Muse loads the next newer page only after its sentinel has left
-            // the view and come back, the way a reader scrolls.
-            if (Date.now() - Math.max(changedAt, nudgedAt) > 3000) {
-              nudgedAt = Date.now();
-              scroll.scrollTop -= scroll.clientHeight;
-              dispatchScroll();
-              await wait();
-              continue;
-            }
-          }
-          if (!bottom) {
-            const step = Math.max(120, scroll.clientHeight * 0.55);
-            scroll.scrollTop += step;
-            dispatchScroll();
-          }
+        if (provider === 'Perplexity' && threadRoot) expectedKeys = [...threadRoot.children].map((_, index) => index);
+        else expectedKeys = scanEntries().map(item => item.key);
+        expectedKeySet = new Set(expectedKeys);
+        if (!expectedKeys.length) throw new Error(`No ${provider} messages were found at the start of the chat.`);
+        if (provider === 'Perplexity') progress(`Perplexity thread exposes ${expectedKeys.length} message positions. Initial capture: ${captured.size}; mounted near start: ${scanEntries().length}; scroll position: ${Math.round(scroll.scrollTop)}px; viewport/content: ${Math.round(scroll.clientHeight)}/${Math.round(scroll.scrollHeight)}px.`);
+        const joint = later[0];
+        // Accessibility surrogates can omit attachment and formatting details,
+        // even in text-only mode. Walk the feed twice before accepting them.
+        const passes = 2;
+        for (let pass = 0; pass < passes; pass++) {
+          scroll.scrollTop = reverse ? -scroll.scrollHeight : 0;
+          dispatchScroll();
           await wait();
+          let bottomStable = 0, lastState = '', content = '', changedAt = Date.now(), nudgedAt = 0;
+          while (bottomStable < 4) {
+            check(); capture();
+            const atEnd = reverse ? scroll.scrollTop >= -2 : scroll.scrollTop + scroll.clientHeight >= scroll.scrollHeight - 2;
+            // After a jump to the top Muse unloads the newest messages and loads
+            // them back in pages near the bottom. The end is not the end yet.
+            const newer = museMore('newer');
+            // A new history window is read only as far as the messages already read.
+            const joined = joint !== undefined && expectedKeySet.has(joint);
+            const bottom = joined || (atEnd && !newer);
+            const signature = `${scroll.scrollTop}:${scroll.scrollHeight}:${captured.size}`;
+            bottomStable = bottom && signature === lastState ? bottomStable + 1 : 0;
+            lastState = signature;
+            const loaded = `${scroll.scrollHeight}:${captured.size}:${expectedKeys.length}`;
+            if (loaded !== content) { content = loaded; changedAt = Date.now(); }
+            else if (atEnd && newer && !joined) {
+              if (Date.now() - changedAt > historyPatience) throw new Error('Muse stopped loading newer messages before reaching the end of the chat. No partial conversation was saved.');
+              historyProgress(`Loading newer Muse messages: ${captured.size} captured so far...`);
+              // Muse loads the next newer page only after its sentinel has left
+              // the view and come back, the way a reader scrolls.
+              if (Date.now() - Math.max(changedAt, nudgedAt) > 3000) {
+                nudgedAt = Date.now();
+                scroll.scrollTop -= scroll.clientHeight;
+                dispatchScroll();
+                await wait();
+                continue;
+              }
+            }
+            if (!bottom) {
+              const step = Math.max(120, scroll.clientHeight * 0.55);
+              scroll.scrollTop += step;
+              dispatchScroll();
+            }
+            await wait();
+          }
+          if (expectedKeys.every(key => captured.has(key) && (provider !== 'Muse' || !captured.get(key).surrogate))) break;
         }
-        if (expectedKeys.every(key => captured.has(key) && (provider !== 'Muse' || !captured.get(key).surrogate))) break;
+        if (provider !== 'Muse') break;
+        if (later.length) {
+          const at = expectedKeys.indexOf(joint);
+          if (at < 0 || expectedKeys.slice(at).some((key, i) => i < later.length && key !== later[i])) {
+            throw new Error('Muse skipped part of the conversation between two history windows. No partial conversation was saved.');
+          }
+          later = expectedKeys.slice(0, at).concat(later);
+        } else later = expectedKeys;
+        museStart = museEdge();
+        if (museStart !== 'limit') break;
+        await museOlderWindow(new Set(later));
+      }
+      if (provider === 'Muse') {
+        expectedKeys = later;
+        expectedKeySet = new Set(later);
       }
       if (provider === 'Perplexity' && threadRoot && captured.size < expectedKeys.length) {
         progress(`Perplexity sweep captured ${captured.size}/${expectedKeys.length}. Visiting unloaded positions individually...`);
