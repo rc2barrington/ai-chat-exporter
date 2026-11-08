@@ -4,6 +4,16 @@ import "../../chrome-extension/exportCore.js";
 
 export async function sessionFiles(session, options, loadAttachment, signal) {
   const messages = [{ text: generateMarkdown(session, options) }];
+  const markdown = text => ({ filename: sanitizeFilename(session.title, "chat-export") + ".md", content: text });
+  // With the attachment folder off, a chat saves as its Markdown file alone,
+  // and each attachment is named where it was, as text.
+  if (options.attachmentFolder === false) {
+    const text = messages[0].text.replace(/(!?)\[([^\]]*)\]\(attachment:(\d+)\)/g, (_, image, linkText, index) => {
+      const label = session.attachments?.[index]?.label || linkText;
+      return `[${image ? "Image" : "File"}: ${label.split(/[\\/]/).filter(Boolean).pop() || label}]`;
+    });
+    return { files: [markdown(text)], failures: [], duplicates: 0 };
+  }
   const saved = [], failures = [];
   for (const [index, attachment] of (session.attachments || []).entries()) {
     // Only files the Markdown links to. Images inside hidden tool output, or
@@ -26,7 +36,7 @@ export async function sessionFiles(session, options, loadAttachment, signal) {
     }
   }
   const result = await globalThis.AIChatExporterCore.deduplicateImages(saved, messages, () => signal.throwIfAborted());
-  const files = [{ filename: sanitizeFilename(session.title, "chat-export") + ".md", content: messages[0].text }];
+  const files = [markdown(messages[0].text)];
   for (const media of result.savedMedia) files.push({ filename: "media/" + media.filename, content: await media.blob.arrayBuffer() });
   signal.throwIfAborted();
   return { files, failures, duplicates: result.duplicates };

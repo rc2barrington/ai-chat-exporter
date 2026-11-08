@@ -41,6 +41,7 @@ The local app opens directly to Codex and automatically lists saved chats. Choos
 ## Export behavior
 
 - No attachment files saved: a plain `.md` file, no empty media folder.
+- Local app attachment folder: Codex chats save as the Markdown file alone by default, with each attachment named in place as text, such as `[Image: screenshot.png]`. Claude Code and OpenCode chats keep the folder. Turn **Save attachments in a folder with the chat** on or off under Export options.
 - Attachments saved: a folder named after the chat, holding a chat-named Markdown file (for example `my-chat.md`) and `media/`. No ZIP files. The extension names the folder with the local date (`my-chat-2026-10-17`); if a folder of that name already holds an export of the chat, it uses `my-chat-2026-10-17 (2)` rather than mixing files.
 - Browser exports record the chat's address as `source_url` in the front matter, so a chat can be found and exported again. Only files the Markdown links to are saved, so images inside hidden tool output are left out.
 - Local app: each chat is saved straight into Downloads by the local app itself, as a Markdown file or a chat folder, never overwriting an existing one. Multiple chats are saved side by side. The website's manual import asks once for a folder to save into (Chrome's folder access); browsers without it get a ZIP.
@@ -91,6 +92,12 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.18
+
+The local app has a new export option, **Save attachments in a folder with the chat**. With it off, a chat saves as its Markdown file alone: no folder and no `media/`, and each attachment is named where it appeared, as `[Image: name]` or `[File: name]`. It starts off for Codex chats and on for Claude Code and OpenCode chats.
+
+1.2.17 did not rebuild the iPhone script and Shortcut after its version change, so its iPhone exports still said 1.2.16 and its checks failed. Both are rebuilt here.
 
 ## 1.2.17
 

@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import JSZip from "jszip";
 import "../chrome-extension/exportCore.js";
 import "../chrome-extension/exportTransport.js";
@@ -122,4 +122,17 @@ it("names a saved attachment after its file, not the temporary path it was uploa
   const result = await sessionFiles(session, {}, async () => new Blob(["png"], { type: "image/png" }), new AbortController().signal);
   expect(result.files.map(f => f.filename)).toEqual(["paths.md", "media/1-Screenshot 2026-10-16 at 11.22.04 PM.png"]);
   expect(result.files[0].content).toContain("(<media/1-Screenshot 2026-10-16 at 11.22.04 PM.png>)");
+});
+
+it("saves a chat as its Markdown file alone with the attachment folder off", async () => {
+  const session = { title: "Flat", messages: [
+    { role: "## You", blocks: [{ type: "text", text: "![Shot](attachment:0) and [notes](attachment:1)" }] },
+    { role: "## Codex", blocks: [{ type: "text", text: "Done" }] },
+  ], attachments: [{ label: "/var/folders/zm/T/Screenshot 1.png", image: true, mime: "image/png" }, { label: "notes.pdf", mime: "application/pdf" }] };
+  const load = vi.fn(async () => new Blob(["file"]));
+  const result = await sessionFiles(session, { attachmentFolder: false }, load, new AbortController().signal);
+  expect(load).not.toHaveBeenCalled();
+  expect(result.files.map(f => f.filename)).toEqual(["flat.md"]);
+  expect(result.files[0].content).toContain("[Image: Screenshot 1.png] and [File: notes.pdf]");
+  expect(result.files[0].content).not.toContain("attachment:");
 });
