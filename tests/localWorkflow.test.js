@@ -13,3 +13,12 @@ it.each(["codex", "opencode", "claude-code"])("keeps %s file import out of the n
   expect(html).not.toContain("Choose chats to export");
   expect(html).not.toContain("opencode export SESSION_ID");
 });
+
+// Codex chats save as the .md file alone unless the folder is turned on.
+it.each([["codex", false], ["claude-code", true], ["opencode", true]])("starts %s with the attachment folder on: %s", (source, on) => {
+  vi.stubGlobal("location", { hostname: "127.0.0.1", search: "" });
+  const html = renderToStaticMarkup(createElement(ExportWorkspace, { source }));
+  const box = /<input type="checkbox"([^>]*)\/>Save attachments in a folder with the chat/.exec(html);
+  expect(box).not.toBeNull();
+  expect(box[1].includes("checked")).toBe(on);
+});

@@ -25,7 +25,9 @@ export function ExportWorkspace({ source }) {
   const [notice, setNotice] = useState("");
   const [preview, setPreview] = useState(null);
   const [review, setReview] = useState(null);
-  const [options, setOptions] = useState({ includeThinking: true, includeTools: true, includeResults: true, frontmatter: false, truncateChars: 0 });
+  // Codex chats save as the Markdown file alone unless the attachment folder
+  // is turned on. Claude Code and OpenCode chats keep it on.
+  const [options, setOptions] = useState({ includeThinking: true, includeTools: true, includeResults: true, frontmatter: false, truncateChars: 0, attachmentFolder: source !== "codex" });
   const picker = useRef(null);
   const folder = useRef(null);
   const controller = useRef(null);
@@ -138,7 +140,8 @@ export function ExportWorkspace({ source }) {
         const title = sanitizeFilename(session.title, "conversation");
         chatTitles.push(title);
         // Each chat is saved on its own: a Markdown file, or a folder holding
-        // the Markdown and media/ when it has attachments. No ZIP files.
+        // the Markdown and media/ when it has attachments and the attachment
+        // folder is on. No ZIP files.
         if (local) saved.push(await saveToDownloads(title, result.files, signal));
         else if (directory) saved.push(await saveToDirectory(directory, title, result.files));
         else for (const file of result.files) files.push({ ...file, filename: snapshot.length > 1 ? `${position + 1}-${title}/${file.filename}` : result.files.length === 1 ? title + ".md" : file.filename });
@@ -185,8 +188,8 @@ export function ExportWorkspace({ source }) {
       </>}
     </section>
     <details className="panel advanced"><summary>Export options <span>Full text included by default</span></summary><div className="option-grid">
-      {[['repliesOnly', 'AI replies only (exclude your messages)'], ['includeThinking', 'Include saved reasoning'], ['includeTools', 'Include tool calls'], ['includeResults', 'Include tool results'], ['frontmatter', 'Add a metadata header']].map(([key, label]) => <label key={key}><input type="checkbox" checked={!!options[key]} disabled={!!busy} onChange={e => setOptions({ ...options, [key]: e.target.checked })} />{label}</label>)}
-    </div><p className="fine-print">Message text and tool output are never shortened by the exporter.</p></details>
+      {[['repliesOnly', 'AI replies only (exclude your messages)'], ['includeThinking', 'Include saved reasoning'], ['includeTools', 'Include tool calls'], ['includeResults', 'Include tool results'], ['frontmatter', 'Add a metadata header'], ['attachmentFolder', 'Save attachments in a folder with the chat']].map(([key, label]) => <label key={key}><input type="checkbox" checked={!!options[key]} disabled={!!busy} onChange={e => setOptions({ ...options, [key]: e.target.checked })} />{label}</label>)}
+    </div><p className="fine-print">Message text and tool output are never shortened by the exporter. With the attachment folder off, each chat saves as one .md file and its attachments are named in place.</p></details>
     {(error || notice || busy) && <div className={`status-message ${error ? "error" : ""}`} role="status">{error || busy || notice}{busy && <button className="text-link" onClick={() => controller.current?.abort()}>Cancel</button>}</div>}
     <div className="export-bar"><div><span className="eyebrow">3 · Export</span><strong>{picks.length ? `${picks.length} chat${picks.length === 1 ? "" : "s"} selected` : "Choose chats to export"}</strong><small>Markdown opens in any text editor and can be uploaded to an AI.</small></div><button className="button" disabled={!picks.length || !!busy} onClick={() => picks.length > 1 ? setReview([...picks]) : exportSessions([...picks])}>{picks.length > 1 ? "Review batch export →" : "Export Markdown ↓"}</button></div>
     </>}
