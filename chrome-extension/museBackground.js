@@ -27,9 +27,20 @@
 // messages remain ("older", "newer", both, or "complete"). A pause in loading
 // is not mistaken for the start or end of the chat.
 //
+// Muse's page holds at most about 900 messages of one chat. When older
+// history would pass that, Muse stops loading it, although the chat goes
+// further back. Its sentinel goes away just as it does at the real start, so
+// this tells the two apart from Muse's chat store, which the page shares
+// through React context: "start", "limit", "more", or "unknown" if the store
+// cannot be found. At the limit the exporter can ask for the window just
+// before the oldest loaded message. That is the jump Muse makes for a search
+// result, and older history loads again from there. Once the export ends,
+// Muse returns to the latest messages.
+//
 // A Muse tab that loads while hidden can stay on "Loading chat" until it is
 // shown. Muse's own router refresh finishes that load without navigating, so
-// the exporter can ask for one. No conversation data is read here.
+// the exporter can ask for one. No conversation data is read here, only
+// Muse's history flags and the position of the oldest loaded message.
 (() => {
   if (globalThis.__aiExporterMuseObserverBridge || typeof IntersectionObserver !== 'function') return;
   globalThis.__aiExporterMuseObserverBridge = true;
@@ -39,8 +50,10 @@
   const MARGINS = { '1000px': 1000, '200px': 200 };
   const ROWS = 'data-ai-exporter-muse-rendered-rows';
   const HISTORY = 'data-ai-exporter-muse-history';
+  const EDGE = 'data-ai-exporter-muse-edge';
+  const JUMP = 'data-ai-exporter-muse-jump';
   const records = new Set();
-  let active = false, publishQueued = false;
+  let active = false, publishQueued = false, jumped = false;
   const isRow = (record, target) => record.margin === '1000px' && target.matches?.('[data-message-item]');
   const isPinned = (record, target) => isRow(record, target)
     || (record.margin === '200px' && !!target.closest?.('[data-message-item]'));
@@ -128,11 +141,53 @@
       queuePublish();
     }
   };
+  // The chat store and the chat actions are context values above the list.
+  const museChat = () => {
+    const list = document.querySelector('[aria-label="Chat messages"]');
+    const key = list && Object.keys(list).find(name => name.startsWith('__reactFiber$'));
+    let store = null, actions = null;
+    for (let fiber = key ? list[key] : null; fiber && !(store && actions); fiber = fiber.return) {
+      const value = fiber.memoizedProps?.value;
+      if (!value || typeof value !== 'object') continue;
+      try {
+        if (!store && typeof value.getState === 'function' && Array.isArray(value.getState()?.chat?.messageIds)) store = value;
+      } catch { /* A different store. */ }
+      if (!actions && typeof value.jumpToMessage === 'function' && typeof value.returnToLatest === 'function') actions = value;
+    }
+    return store && actions ? { chat: store.getState().chat, actions } : null;
+  };
+  document.addEventListener('__aiExporterMuseEdge', () => {
+    let chat = null;
+    try { chat = museChat()?.chat ?? null; } catch { /* Reported as unknown. */ }
+    document.documentElement.setAttribute(EDGE, !chat ? 'unknown'
+      : chat.hasReachedHistoryStart ? 'start' : chat.hasMore ? 'more' : 'limit');
+  });
+  document.addEventListener('__aiExporterMuseOlderWindow', async () => {
+    const root = document.documentElement;
+    let found = null;
+    try { found = museChat(); } catch { /* Reported as failed. */ }
+    const from = found?.chat.oldestSeq;
+    if (!active || typeof from !== 'number') { root.setAttribute(JUMP, 'failed'); return; }
+    root.setAttribute(JUMP, 'pending');
+    jumped = true;
+    // The message id is not in the chat, so Muse fetches the window around
+    // the position instead of scrolling to a loaded message.
+    try { await found.actions.jumpToMessage('ai-chat-exporter-window', from); } catch { /* Checked below. */ }
+    let chat = null;
+    try { chat = museChat()?.chat ?? null; } catch { /* Reported as failed. */ }
+    root.setAttribute(JUMP, chat && typeof chat.oldestSeq === 'number' && chat.oldestSeq < from ? 'done' : 'failed');
+  });
   const stop = () => {
     if (!active) return;
     active = false;
     document.documentElement.removeAttribute(ROWS);
     document.documentElement.removeAttribute(HISTORY);
+    document.documentElement.removeAttribute(EDGE);
+    document.documentElement.removeAttribute(JUMP);
+    if (jumped) {
+      jumped = false;
+      try { Promise.resolve(museChat()?.actions.returnToLatest()).catch(() => {}); } catch { /* The page stays on the older window. */ }
+    }
     for (const record of records) {
       const entries = [...record.targets].filter(target => isPinned(record, target))
         .map(target => measured(record, target, MARGINS[record.margin]));
