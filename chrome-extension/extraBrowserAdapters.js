@@ -1,4 +1,4 @@
-// Muse and Perplexity browser adapters.
+// Muse, Perplexity and Truthly browser adapters.
 globalThis.AIChatExporterExtraAdapters = (() => {
   function siteName(href) {
     try {
@@ -6,8 +6,175 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       if (u.protocol !== 'https:') return '';
       if (/^(www\.)?muse\.ai$/.test(u.hostname) && (u.pathname === '/' || /^\/thread\/[^/?]+/.test(u.pathname))) return 'Muse';
       if (/^(www\.)?perplexity\.ai$/.test(u.hostname) && /^\/search\/[^/?]+/.test(u.pathname)) return 'Perplexity';
+      // Every Truthly chat opens at /home. The address never names the chat.
+      if (u.hostname === 'web.truthly.ai' && /^\/(home\/?)?$/.test(u.pathname)) return 'Truthly';
     } catch { /* Not a URL. */ }
     return '';
+  }
+  // Truthly keeps the open chat in React state, not in the page address, and
+  // loads all of a chat's messages in one request when it is opened. Each
+  // message is { id, text, role: "user" | "assistant", timestamp: Date },
+  // with optional metadata (citations, and visuallyHidden for prompts the app
+  // sends but never shows) and attachments ({ kind, filename, s3_key }).
+  // React's internals are visible only to the page's own JavaScript, so the
+  // extension also loads this file there and asks it through a DOM event.
+  const TRUTHLY_ANSWER = 'data-ai-exporter-truthly-chat';
+  // Truthly builds each timestamp with new Date(), which can be invalid.
+  const isDate = value => Object.prototype.toString.call(value) === '[object Date]';
+  const truthlyMessage = value => !!value && typeof value === 'object' && typeof value.id === 'string'
+    && typeof value.text === 'string' && (value.role === 'user' || value.role === 'assistant') && isDate(value.timestamp);
+  function truthlyState(doc) {
+    const container = doc.getElementById?.('root');
+    const key = container && Object.keys(container).find(name => name.startsWith('__reactContainer$'));
+    if (!key) return null;
+    const lists = [], titles = new Map();
+    // The root element points at the tree React first rendered. React swaps
+    // two trees on every update, and the current one is kept on the root.
+    const stack = [container[key]?.stateNode?.current || container[key]];
+    for (let visited = 0; stack.length && visited < 200000; visited++) {
+      const fiber = stack.pop();
+      if (!fiber || typeof fiber !== 'object') continue;
+      if (fiber.sibling) stack.push(fiber.sibling);
+      if (fiber.child) stack.push(fiber.child);
+      // The chat list (titles) is a paged query in the React Query cache.
+      const client = fiber.memoizedProps?.client;
+      if (client && typeof client.getQueryCache === 'function') {
+        try {
+          for (const query of client.getQueryCache().getAll()) {
+            for (const page of query.state?.data?.pages || []) {
+              for (const thread of Array.isArray(page?.threads) ? page.threads : []) {
+                if (typeof thread?.id === 'string' && typeof thread.title === 'string') titles.set(thread.id, thread.title);
+              }
+            }
+          }
+        } catch { /* Not the cache this expects. Titles fall back to the first question. */ }
+      }
+      // A function component's hooks are a linked list. useState keeps its
+      // value as is, so the open chat's message array is one hook's value, and
+      // the open chat's id is a string hook beside it.
+      let hook = fiber.memoizedState;
+      if (!hook || typeof hook !== 'object' || !('next' in hook) || !('memoizedState' in hook)) continue;
+      const strings = [], found = [];
+      for (let n = 0; hook && n < 1000; hook = hook.next, n++) {
+        const value = hook.memoizedState;
+        if (typeof value === 'string' && value) strings.push(value);
+        else if (Array.isArray(value) && value.length && value.every(truthlyMessage)) found.push(value);
+      }
+      for (const messages of found) lists.push({ messages, strings });
+    }
+    // If more than one chat is held, the open one is the one on screen: count
+    // its questions shown in the page, then prefer a chat in the chat list.
+    const squash = value => value.replace(/\s+/g, ' ').trim();
+    const page = lists.length > 1 ? squash(doc.body?.textContent || '') : '';
+    const shown = list => list.messages.filter(message => message.role === 'user' && squash(message.text) && page.includes(squash(message.text).slice(0, 80))).length;
+    const known = list => list.strings.some(value => titles.has(value)) ? 1 : 0;
+    const open = lists.map(list => ({ list, shown: shown(list), known: known(list) }))
+      .sort((a, b) => b.shown - a.shown || b.known - a.known || b.list.messages.length - a.list.messages.length)[0]?.list;
+    const threadId = open?.strings.find(value => titles.has(value)) || '';
+    const text = value => typeof value === 'string' ? value : '';
+    return { threadId, title: titles.get(threadId) || '', messages: (open?.messages || []).map(message => ({
+      role: message.role, text: message.text, timestamp: Number.isNaN(message.timestamp.getTime()) ? '' : message.timestamp.toISOString(),
+      hidden: message.metadata?.visuallyHidden === true,
+      citations: (Array.isArray(message.metadata?.citations) ? message.metadata.citations : [])
+        .filter(source => source && typeof source.url === 'string').map(source => ({ title: text(source.title), url: source.url })),
+      attachments: (Array.isArray(message.attachments) ? message.attachments : []).filter(item => item && typeof item === 'object').map(item => ({
+        kind: item.kind === 'image' || item.type === 'image' ? 'image' : 'file', filename: text(item.filename),
+        key: text(item.s3_key), preview: /^blob:/.test(text(item.localPreviewUrl)) ? item.localPreviewUrl : '',
+      })),
+    })) };
+  }
+  // Runs in the page's own world. Replaces a listener left by an older copy.
+  function serveTruthly(doc) {
+    const root = globalThis;
+    if (root.__aiExporterTruthlyListener) doc.removeEventListener('__aiExporterTruthlyRead', root.__aiExporterTruthlyListener);
+    root.__aiExporterTruthlyListener = () => {
+      let answer;
+      try { answer = truthlyState(doc) || { error: 'Truthly\'s page has not loaded. Wait for it to finish and retry.' }; }
+      catch (error) { answer = { error: `Truthly's page could not be read (${error?.message || error}).` }; }
+      doc.documentElement.setAttribute(TRUTHLY_ANSWER, JSON.stringify(answer));
+    };
+    doc.addEventListener('__aiExporterTruthlyRead', root.__aiExporterTruthlyListener);
+  }
+  // Uploaded images are kept privately. Truthly's page asks its server for
+  // short-lived links with the user's sign-in, which the page stores here.
+  async function truthlyImageLinks(doc, keys, signal) {
+    let session = null;
+    try { session = JSON.parse(doc.defaultView.localStorage.getItem('truthly_cognito_session') || 'null')?.session; } catch { /* Checked below. */ }
+    if (typeof session?.idToken !== 'string' || !session.idToken) throw new Error('Truthly\'s sign-in was not found in this tab');
+    if (typeof session.expiresAt === 'number' && session.expiresAt <= Date.now()) throw new Error('Truthly\'s sign-in in this tab has expired. Reload the tab and export again');
+    const response = await fetch('https://backend-api.truthly.ai/v1/attachments/refresh-urls', {
+      method: 'POST', signal, credentials: 'omit',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.idToken}` },
+      body: JSON.stringify({ keys: keys.slice(0, 200) }),
+    });
+    if (!response.ok) throw new Error(`Truthly did not give image links (HTTP ${response.status})`);
+    const links = {};
+    for (const [key, value] of Object.entries((await response.json())?.urls || {})) {
+      try { if (typeof value === 'string' && new URL(value).protocol === 'https:') links[key] = value; } catch { /* Not a link. */ }
+    }
+    return links;
+  }
+  async function exportTruthly(doc, href, { includeMedia = true, signal } = {}) {
+    let chat = truthlyState(doc);
+    if (!chat) {
+      const root = doc.documentElement;
+      root.removeAttribute(TRUTHLY_ANSWER);
+      doc.dispatchEvent(new (doc.defaultView?.Event || Event)('__aiExporterTruthlyRead'));
+      const answer = root.getAttribute(TRUTHLY_ANSWER);
+      root.removeAttribute(TRUTHLY_ANSWER);
+      if (answer === null) throw new Error('Truthly\'s page did not answer. Reload the extension and the Truthly tab, then retry.');
+      chat = JSON.parse(answer);
+    }
+    if (chat.error) throw new Error(chat.error);
+    const shown = chat.messages.filter(message => !message.hidden);
+    if (!shown.length) throw new Error('No Truthly chat is open. Open a chat from the sidebar, let it load, and retry.');
+    // An answer starts empty and fills in as Truthly writes it.
+    if (shown.some(message => message.role === 'assistant' && !message.text.trim())) throw new Error('Truthly is still writing an answer. Export again when it finishes.');
+    const label = value => String(value || '').replace(/[[\]\r\n]/g, ' ').trim();
+    const remoteQueue = [], failedFetches = [];
+    const wanted = includeMedia ? [...new Set(shown.flatMap(message => message.attachments)
+      .filter(item => item.kind === 'image' && item.key && !item.preview).map(item => item.key))] : [];
+    let links = {}, linkError = '';
+    if (wanted.length) {
+      try { links = await truthlyImageLinks(doc, wanted, signal); }
+      catch (error) {
+        if (signal?.aborted) throw error;
+        linkError = error.message;
+      }
+    }
+    const messages = shown.map(message => {
+      const parts = message.attachments.map(item => {
+        const name = label(item.filename) || (item.kind === 'image' ? 'Image' : 'File');
+        if (item.kind !== 'image' || !includeMedia) return `[${item.kind === 'image' ? 'Image' : 'File'}: ${name}]`;
+        const src = item.preview || links[item.key];
+        const filename = `truthly-${remoteQueue.length + failedFetches.length + 1}-${name.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^\.+/, '') || 'image'}`;
+        if (!src) {
+          failedFetches.push({ filename, url: href, error: linkError || 'Truthly gave no link for this image' });
+          return `[Image unavailable in export: ${name}]`;
+        }
+        remoteQueue.push({ url: src, filename, kind: 'image' });
+        return `![${name}](media/${filename})`;
+      });
+      let text = message.text.trim();
+      if (message.citations.length) {
+        const sources = message.citations.flatMap(source => {
+          try {
+            const target = new URL(source.url);
+            return /^https?:$/.test(target.protocol) ? [`[${label(source.title) || target.hostname}](<${target.href.replace(/[<>\r\n]/g, '')}>)`] : [];
+          } catch { return []; }
+        });
+        if (sources.length) text += `\n\n**Sources**\n\n${sources.map((source, index) => `${index + 1}. ${source}`).join('\n')}`;
+      }
+      return { role: message.role === 'user' ? '## You' : '## Truthly', text: [...parts, text].filter(Boolean).join('\n\n') };
+    });
+    const firstQuestion = shown.find(message => message.role === 'user')?.text.split('\n')[0] || '';
+    const hidden = chat.messages.length - shown.length;
+    return {
+      title: label(chat.title).slice(0, 140) || firstQuestion.replace(/\s+/g, ' ').slice(0, 140).trim() || 'Truthly chat',
+      siteName: 'Truthly', date: new Date().toISOString(), messages, messageCount: messages.length,
+      savedMedia: [], remoteQueue, failedFetches, appendix: '',
+      history: { status: 'page-verified', basis: `Read all ${messages.length} messages of the open Truthly chat from the page, which loads a chat whole rather than in pages.${hidden ? ` Left out ${hidden} prompt${hidden === 1 ? '' : 's'} Truthly sends but does not show.` : ''}` },
+    };
   }
   const querySelector = '[class~="group/user-bubble"]';
   function museEntries(doc) {
@@ -355,6 +522,7 @@ globalThis.AIChatExporterExtraAdapters = (() => {
   async function exportConversation(doc, href, options = {}) {
     const provider = siteName(href);
     if (!provider) throw new Error('This provider is not supported.');
+    if (provider === 'Truthly') return exportTruthly(doc, href, options);
     const signal = options.signal;
     const progress = message => options.onProgress?.(message);
     const check = () => {
@@ -665,5 +833,5 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       scroll.scrollTop = provider === 'Perplexity' && originalAtBottom ? scroll.scrollHeight : original;
     }
   }
-  return { names: ['Muse', 'Perplexity'], siteName, extract, exportConversation };
+  return { names: ['Muse', 'Perplexity', 'Truthly'], siteName, extract, exportConversation, serveTruthly };
 })();
