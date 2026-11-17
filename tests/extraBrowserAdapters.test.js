@@ -452,11 +452,11 @@ describe('Muse and Perplexity browser providers', () => {
   });
 });
 
-it('ships Muse and Perplexity providers with their permissions', () => {
+it('ships Muse, Perplexity and Truthly providers with their permissions', () => {
   const publicContext={ URL };
   const stub=source;
   vm.runInNewContext(stub,publicContext);
-  expect(publicContext.AIChatExporterExtraAdapters.names).toEqual(['Muse', 'Perplexity']);
+  expect(publicContext.AIChatExporterExtraAdapters.names).toEqual(['Muse', 'Perplexity', 'Truthly']);
   expect(publicContext.AIChatExporterExtraAdapters.siteName(muse)).toBe('Muse');
   expect(publicContext.AIChatExporterExtraAdapters.siteName(perplexity)).toBe('Perplexity');
   expect(typeof publicContext.AIChatExporterExtraAdapters.exportConversation).toBe('function');
@@ -466,4 +466,137 @@ it('ships Muse and Perplexity providers with their permissions', () => {
   expect(manifest.host_permissions).toContain('https://www.perplexity.ai/*');
   expect(manifest.host_permissions.join(' ')).toMatch(/ppl-ai-file-upload/);
   expect(manifest.host_permissions.join(' ')).toContain('chatgpt.com');
+  expect(manifest.host_permissions).toContain('https://web.truthly.ai/*');
+  expect(manifest.host_permissions).toContain('https://backend-api.truthly.ai/*');
+});
+
+describe('Truthly', () => {
+  const home = 'https://web.truthly.ai/home';
+  const when = new Date('2026-11-08T12:00:00Z');
+  const chatMessage = (id, role, text, extra = {}) => ({ id, role, text, timestamp: when, ...extra });
+  // Hooks are a linked list of { memoizedState, next }, as React keeps them.
+  const hooks = (...values) => values.reduceRight((next, memoizedState) => ({ memoizedState, next, queue: null }), null);
+  // A page shaped like Truthly's: a React root holding a React Query client
+  // with the chat list, the open chat (its id and messages in useState), and
+  // an older component still holding another chat's messages.
+  function truthlyPage({ messages, threadId = 't-open', titles = [['t-open', 'Grace and works'], ['t-old', 'Older chat']], session = { idToken: 'token', expiresAt: Date.now() + 3600000 }, screen = '<p>Let us begin.</p><p>What is grace?</p><p><b>Grace</b> is a gift.</p>' } = {}) {
+    const { document, window } = parseHTML(`<html><body><div id="root">${screen}</div></body></html>`);
+    const client = { getQueryCache: () => ({ getAll: () => [
+      { state: { data: { pages: [{ threads: titles.map(([id, title]) => ({ id, title, createdAt: when, updatedAt: when })) }] } } },
+      { state: { data: { verse: 'unrelated query' } } },
+    ] }) };
+    const stale = { memoizedState: hooks('t-old', [chatMessage('o1', 'user', 'Old question'), chatMessage('o2', 'assistant', 'Old answer'), chatMessage('o3', 'user', 'Old again'), chatMessage('o4', 'assistant', 'Old reply'), chatMessage('o5', 'user', 'Old last')]) };
+    const chat = { memoizedState: hooks('draft in the composer', threadId, false, messages ?? [
+      chatMessage('1', 'user', 'Pray with me', { metadata: { visuallyHidden: true } }),
+      chatMessage('2', 'assistant', 'Let us begin.', { timestamp: new Date('not a date') }),
+      chatMessage('3', 'user', 'What is grace?', { attachments: [{ id: 'k1', kind: 'image', filename: 'icon [1].png', s3_key: 'uploads/k1.png' }, { id: 'k2', kind: 'pdf', filename: 'notes.pdf', s3_key: 'uploads/k2.pdf' }] }),
+      chatMessage('4', 'assistant', '**Grace** is a gift.', { metadata: { citations: [{ title: 'Catechism 1996', url: 'https://www.vatican.va/archive/ENG0015/__P6Z.HTM', index: 1 }, { title: 'Bad', url: 'javascript:alert(1)' }] } }),
+    ]) };
+    stale.sibling = chat;
+    const provider = { memoizedProps: { client }, memoizedState: null, child: stale };
+    // The root element keeps the first tree; the current one hangs off the
+    // root's stateNode, as in React.
+    const current = { memoizedState: { element: null }, child: provider };
+    const first = { memoizedState: { element: null }, child: { memoizedState: hooks([chatMessage('x', 'user', 'One update behind')]) }, stateNode: { current } };
+    document.getElementById('root').__reactContainer$test = first;
+    window.localStorage = { getItem: key => key === 'truthly_cognito_session' && session ? JSON.stringify({ v: 1, session }) : null };
+    return document;
+  }
+  function truthlyAdapter(fetch = vi.fn()) {
+    const sandbox = { URL, fetch, setTimeout, clearTimeout, Date };
+    vm.runInNewContext(source, sandbox);
+    return { adapter: sandbox.AIChatExporterExtraAdapters, fetch, sandbox };
+  }
+  const links = { 'uploads/k1.png': 'https://truthly-uploads.s3.amazonaws.com/uploads/k1.png?X-Amz-Signature=abc' };
+  const okFetch = () => vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ urls: links }) }));
+
+  it('recognises only Truthly\'s web app home, where its chats open', () => {
+    expect(adapter.siteName(home)).toBe('Truthly');
+    expect(adapter.siteName('https://web.truthly.ai/')).toBe('Truthly');
+    for (const url of ['https://web.truthly.ai/login', 'https://truthly.ai/home', 'http://web.truthly.ai/home', 'https://web.truthly.ai.evil.test/home']) expect(adapter.siteName(url)).toBe('');
+  });
+
+  it('exports the open chat from the page, with its title, sources and uploaded image', async () => {
+    const { adapter: truthly, fetch } = truthlyAdapter(okFetch());
+    const result = await truthly.exportConversation(truthlyPage(), home, { includeMedia: true });
+    expect(result.title).toBe('Grace and works');
+    expect(result.siteName).toBe('Truthly');
+    expect(result.messages.map(m => m.role)).toEqual(['## Truthly', '## You', '## Truthly']);
+    expect(result.messages[1].text).toBe('![icon  1 .png](media/truthly-1-icon--1-.png)\n\n[File: notes.pdf]\n\nWhat is grace?');
+    expect(result.messages[2].text).toBe('**Grace** is a gift.\n\n**Sources**\n\n1. [Catechism 1996](<https://www.vatican.va/archive/ENG0015/__P6Z.HTM>)');
+    expect(result.remoteQueue).toEqual([{ url: links['uploads/k1.png'], filename: 'truthly-1-icon--1-.png', kind: 'image' }]);
+    expect(result.failedFetches).toEqual([]);
+    expect(result.history.basis).toBe('Read all 3 messages of the open Truthly chat from the page, which loads a chat whole rather than in pages. Left out 1 prompt Truthly sends but does not show.');
+    expect(JSON.stringify(result)).not.toMatch(/Old |draft in the composer|One update behind/);
+    const [url, request] = fetch.mock.calls[0];
+    expect(url).toBe('https://backend-api.truthly.ai/v1/attachments/refresh-urls');
+    expect(request.headers.Authorization).toBe('Bearer token');
+    expect(JSON.parse(request.body)).toEqual({ keys: ['uploads/k1.png'] });
+  });
+
+  it('names attachments without asking for links when media is off', async () => {
+    const { adapter: truthly, fetch } = truthlyAdapter();
+    const result = await truthly.exportConversation(truthlyPage(), home, { includeMedia: false });
+    expect(result.messages[1].text).toBe('[Image: icon  1 .png]\n\n[File: notes.pdf]\n\nWhat is grace?');
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.remoteQueue).toEqual([]);
+  });
+
+  it('still saves the chat when the sign-in has expired, and says which image is missing', async () => {
+    const { adapter: truthly, fetch } = truthlyAdapter(okFetch());
+    const result = await truthly.exportConversation(truthlyPage({ session: { idToken: 'old', expiresAt: Date.now() - 1000 } }), home);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(result.messages[1].text).toContain('[Image unavailable in export: icon  1 .png]');
+    expect(result.failedFetches).toEqual([{ filename: 'truthly-1-icon--1-.png', url: home, error: 'Truthly\'s sign-in in this tab has expired. Reload the tab and export again' }]);
+  });
+
+  it('picks the chat shown on screen, named by its first question when the chat list lacks it', async () => {
+    const { adapter: truthly } = truthlyAdapter();
+    const page = truthlyPage({ threadId: 'unsaved', screen: '<p>Who was  St. Augustine?\nMore</p><div>Answer</div>',
+      messages: [chatMessage('1', 'user', 'Who was St. Augustine?\nMore'), chatMessage('2', 'assistant', 'Answer')] });
+    const result = await truthly.exportConversation(page, home, { includeMedia: false });
+    expect(result.title).toBe('Who was St. Augustine?');
+    expect(result.messages.map(m => m.text)).toEqual(['Who was St. Augustine?\nMore', 'Answer']);
+  });
+
+  it('refuses when no chat is open', async () => {
+    const { adapter: truthly } = truthlyAdapter();
+    const document = truthlyPage({ messages: [] });
+    document.getElementById('root').__reactContainer$test.stateNode.current.child.child = null;
+    await expect(truthly.exportConversation(document, home)).rejects.toThrow('No Truthly chat is open');
+  });
+
+  it('asks the page\'s own copy through a DOM event when React is out of sight', async () => {
+    const { adapter: page, sandbox } = truthlyAdapter();
+    const { adapter: extension } = truthlyAdapter();
+    const document = truthlyPage();
+    page.serveTruthly(document);
+    // The extension's isolated world cannot see React's properties on the root.
+    const root = document.getElementById('root');
+    const fiber = root.__reactContainer$test;
+    delete root.__reactContainer$test;
+    Object.defineProperty(root, '__reactContainer$test', { value: fiber, enumerable: false, configurable: true });
+    const listener = sandbox.__aiExporterTruthlyListener;
+    document.removeEventListener('__aiExporterTruthlyRead', listener);
+    // Seen from the page, the property is there.
+    document.addEventListener('__aiExporterTruthlyRead', () => {
+      Object.defineProperty(root, '__reactContainer$test', { value: fiber, enumerable: true, configurable: true });
+      listener();
+      Object.defineProperty(root, '__reactContainer$test', { value: fiber, enumerable: false, configurable: true });
+    });
+    const result = await extension.exportConversation(document, home, { includeMedia: false });
+    expect(result.messages.map(m => m.text.split('\n')[0])).toEqual(['Let us begin.', '[Image: icon  1 .png]', '**Grace** is a gift.']);
+    expect(document.documentElement.hasAttribute('data-ai-exporter-truthly-chat')).toBe(false);
+  });
+
+  it('waits for an answer Truthly is still writing', async () => {
+    const { adapter: truthly } = truthlyAdapter();
+    const page = truthlyPage({ screen: '<p>Question</p>', messages: [chatMessage('1', 'user', 'Question'), chatMessage('2-ai', 'assistant', '')] });
+    await expect(truthly.exportConversation(page, home)).rejects.toThrow('still writing an answer');
+  });
+
+  it('tells the user to reload when the page copy is missing', async () => {
+    const { adapter: truthly } = truthlyAdapter();
+    await expect(truthly.exportConversation(doc('<div id="root"></div>'), home)).rejects.toThrow('Reload the extension and the Truthly tab');
+  });
 });

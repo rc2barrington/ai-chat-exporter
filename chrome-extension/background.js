@@ -1617,6 +1617,20 @@ async function runBatchExport(targetTabs, options, runId, signal) {
         );
         throwIfExportCancelled(signal);
 
+        // Truthly keeps the open chat in React state, which only the page's
+        // own JavaScript can see. Load the adapters there as well, and let
+        // that copy answer the scraper through a DOM event.
+        const exportUrl = tabObj && (tabObj.url || tabObj.pendingUrl) || discoveredUrl || "";
+        if (/^https:\/\/web\.truthly\.ai\//i.test(exportUrl)) {
+          await chrome.scripting.executeScript({ target: { tabId: tabId }, world: "MAIN", files: ["extraBrowserAdapters.js"] });
+          await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            world: "MAIN",
+            func: () => globalThis.AIChatExporterExtraAdapters.serveTruthly(document),
+          });
+          throwIfExportCancelled(signal);
+        }
+
         logProgress(`Injecting scraper script...`, "info");
         await chrome.scripting.executeScript({
           target: { tabId: tabId },

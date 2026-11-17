@@ -4,7 +4,7 @@ Save browser conversations and local coding sessions as readable Markdown, with 
 
 **[Open the website](https://rc2barrington.github.io/ai-chat-exporter/)**
 
-Browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google AI Mode, Muse and Perplexity. Local coding chats: Codex, Claude Code and OpenCode.
+Browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google AI Mode, Muse, Perplexity and Truthly. Local coding chats: Codex, Claude Code and OpenCode.
 
 ## Get started
 
@@ -14,7 +14,7 @@ Browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google A
 2. Open `chrome://extensions`, enable Developer mode, and use **Load unpacked** to select the extracted extension folder.
 3. Open the extension, select chats, choose whether to include attachments, and export.
 
-Supported sources: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews and Google Search AI Mode on google.com, Muse, and Perplexity. Exports run in existing tabs without moving or activating them. A tab Chrome has unloaded to save memory is loaded again in place first. Updating an unpacked extension requires replacing its files and clicking Reload in Chrome. New host permissions may require Chrome approval.
+Supported sources: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews and Google Search AI Mode on google.com, Muse, Perplexity, and Truthly (web.truthly.ai). Exports run in existing tabs without moving or activating them. A tab Chrome has unloaded to save memory is loaded again in place first. Updating an unpacked extension requires replacing its files and clicking Reload in Chrome. New host permissions may require Chrome approval.
 
 Enable **AI replies only** in the extension's Export Settings, or in Export options for local sessions, to exclude your messages and their attachments. The console fallback also offers replies-only plain text output. Refresh an open Muse or Perplexity chat once after updating the extension to enable its background rendering helper.
 
@@ -58,6 +58,8 @@ ChatGPT text is reconstructed from the authoritative active root-to-current chai
 
 Other browser providers use the messages available through their pages. Their output is a page capture, not an independently verified server history. Muse and Perplexity each use a document-start helper to keep the selected thread's virtual message rows rendered during export, including when Chrome suspends native intersection callbacks in background tabs. Muse's helper also keeps its history pages loading and reports when the real start and end of the chat are reached, so a slow page is not mistaken for the end. Muse's page holds at most about 900 messages of one chat, so for a longer chat the helper has Muse load the window before the oldest message read, the way it jumps to a search result, and the windows are joined where they overlap. Muse scrolls its thread to load that history. Normal virtualization resumes after completion or cancellation. Refresh the chat once after installing or updating the extension so the helper can register before the page creates its observers. Both providers refuse an export when message positions cannot all be rendered. Both export conversation text and uploaded or displayed images, but not other file types. Perplexity omits its bulk Web sources. Its file pane is consulted for current image URLs, and signed and unsigned links to the same uploaded image are treated as one item. Muse's clickable image bubbles, including `blob:` images, are captured, as are its idea and shopping cards, image choices, file chips and offered reply options. Images Muse loads lazily are loaded during the export. A Muse tab still showing "Loading chat" is refreshed through Muse itself. Muse exports are named after the chat's page title when the tab has one. Perplexity's question timestamps are left out. Interactive non-image artifacts keep a text label, not a misleading download failure. Website changes, authentication and expired image links can still affect results. Gemini images are labeled neutrally, not assumed to be generated merely because Gemini displayed them.
 
+Truthly opens every chat at web.truthly.ai/home, so the address never says which chat is open. The page keeps the open chat in React state, loaded whole in one request when the chat is opened, and the exporter reads it from there: the extension loads its adapter file into the page's own JavaScript world for this, because React's state cannot be seen from an extension's isolated world. Prompts Truthly sends but never shows are left out, and `history_basis` counts them. Sources become a numbered list under each answer. Uploaded images are fetched through the short-lived links Truthly's page asks its own server for, using the sign-in the page keeps in the tab; if that sign-in has expired the chat still saves and each image is named in place. Uploaded PDFs are named, not saved. The chat's name comes from Truthly's chat list, or from the first question for a chat the list does not show yet. Nothing has to be refreshed after installing or updating the extension.
+
 The extension transports data in acknowledged 256 Ki-character chunks instead of one giant Chrome message. There is no configured total attachment count, total transfer size, or whole-export deadline. Individual network requests still time out when stalled. Browser memory, ZIP format constraints, disk space and provider access remain real limits.
 
 Deleted or expired files cannot be reconstructed from a filename. Local exports copy bytes only from embedded attachments or structured file references that remain accessible. Paths mentioned in ordinary chat text or tool commands are not treated as permission to read arbitrary files.
@@ -92,6 +94,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.19
+
+Truthly chats now export. Open a chat at web.truthly.ai in Chrome and pick its tab in the extension. Truthly never puts the chat in the page address, so the exporter reads the open chat from the page itself, where Truthly holds all of it once the chat is opened. Each answer keeps its sources as a numbered list, uploaded images are saved with the chat, uploaded PDFs are named, and prompts Truthly sends but never shows are left out. The console script works on Truthly too.
 
 ## 1.2.18
 
