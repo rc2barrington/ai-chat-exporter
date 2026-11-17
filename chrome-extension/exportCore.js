@@ -18,6 +18,29 @@ globalThis.AIChatExporterCore = (() => {
       }
     }
   }
+  // Chrome renames a download whose extension does not fit its type: a JPEG
+  // queued as "image.png" is saved as "image.jpeg", and the Markdown would
+  // link to a file that is not there. Name each picture after what it is and
+  // move its links with it.
+  const IMAGE_EXTENSIONS = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp",
+    "image/avif": ".avif", "image/svg+xml": ".svg", "image/heic": ".heic", "image/bmp": ".bmp", "image/tiff": ".tiff" };
+  function matchImageExtensions(savedMedia, messages) {
+    const taken = new Set(savedMedia.map(media => media.filename)), aliases = new Map();
+    for (const media of savedMedia) {
+      const ext = IMAGE_EXTENSIONS[String(media.blob?.type || media.type || "").split(";")[0].trim().toLowerCase()];
+      if (!ext) continue;
+      const current = (media.filename.match(/\.[^./]+$/) || [""])[0].toLowerCase();
+      if (current === ext || (ext === ".jpg" && current === ".jpeg") || (ext === ".tiff" && current === ".tif")) continue;
+      const base = media.filename.replace(/\.(png|jpe?g|gif|webp|avif|svg|heic|bmp|tiff?)$/i, "");
+      let name = base + ext;
+      for (let n = 2; taken.has(name); n++) name = `${base}-${n}${ext}`;
+      taken.add(name);
+      aliases.set(media.filename, name);
+      media.filename = name;
+    }
+    rewriteMedia(messages, aliases);
+    return aliases.size;
+  }
   async function deduplicateImages(savedMedia, messages, check = () => {}) {
     const groups = new Map(), unique = [], aliases = new Map();
     for (const media of savedMedia) {
@@ -46,5 +69,5 @@ globalThis.AIChatExporterCore = (() => {
     rewriteMedia(messages, aliases);
     return { savedMedia: unique, duplicates: aliases.size };
   }
-  return { zipLocalDate, stampZip, rewriteMedia, deduplicateImages };
+  return { zipLocalDate, stampZip, rewriteMedia, matchImageExtensions, deduplicateImages };
 })();

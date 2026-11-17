@@ -136,3 +136,18 @@ it("saves a chat as its Markdown file alone with the attachment folder off", asy
   expect(result.files[0].content).toContain("[Image: Screenshot 1.png] and [File: notes.pdf]");
   expect(result.files[0].content).not.toContain("attachment:");
 });
+
+it("names saved pictures after their real type and moves every link with them", () => {
+  const savedMedia = [
+    { filename: "000-image.png", blob: new Blob(["j"], { type: "image/jpeg" }) },
+    { filename: "001-photo.jpeg", type: "image/jpeg", base64: "eA==" },
+    { filename: "002-image.png", blob: new Blob(["p"], { type: "image/png" }) },
+    { filename: "003-image.jpg", blob: new Blob(["p"], { type: "image/png" }) },
+    { filename: "003-image.png", blob: new Blob(["p"], { type: "image/png" }) },
+    { filename: "notes.md", blob: new Blob(["n"], { type: "text/markdown" }) },
+  ];
+  const messages = [{ text: "![a](media/000-image.png)\n*(Image: `media/000-image.png`)* ![b](media/000-image.png.bak) ![c](media/003-image.jpg)" }];
+  expect(core.matchImageExtensions(savedMedia, messages)).toBe(2);
+  expect(savedMedia.map(media => media.filename)).toEqual(["000-image.jpg", "001-photo.jpeg", "002-image.png", "003-image-2.png", "003-image.png", "notes.md"]);
+  expect(messages[0].text).toBe("![a](media/000-image.jpg)\n*(Image: `media/000-image.jpg`)* ![b](media/000-image.png.bak) ![c](media/003-image-2.png)");
+});
