@@ -233,7 +233,11 @@ async function processSessionDownload(data, options, signal) {
         let lastError;
         for (const url of [...new Set([item.url, item.fallbackUrl].filter(Boolean))]) {
           try {
-            const res = await fetch(url, { credentials: 'omit', signal: controller.signal });
+            // Gemini's upload links pass through lh3.google.com, which serves
+            // the picture only with the user's Google sign-in. Every other
+            // host gets no cookies.
+            const credentials = /^https:\/\/lh3\.googleusercontent\.com\/gg\//.test(url) ? 'include' : 'omit';
+            const res = await fetch(url, { credentials, signal: controller.signal });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             blob = await res.blob();
             if (!blob.size) throw new Error("Empty attachment response");
@@ -317,6 +321,7 @@ async function processSessionDownload(data, options, signal) {
   }
 
   if (globalThis.AIChatExporterCore) {
+    globalThis.AIChatExporterCore.matchImageExtensions(data.savedMedia, references);
     const deduped = await globalThis.AIChatExporterCore.deduplicateImages(data.savedMedia, references, () => throwIfPackagingCancelled(signal));
     data.savedMedia = deduped.savedMedia;
     if (deduped.duplicates) logProgress(`Kept one copy of ${deduped.duplicates} exact duplicate image(s). All conversation references are preserved.`, "info");

@@ -95,6 +95,10 @@ CI runs tests, lint, production build and downloadable packaging. Tests include 
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
 
+## 1.2.20
+
+Gemini chats save your uploaded images again. Gemini now marks the box around every turn with a class the exporter took for the message toolbar, so every picture in a Gemini chat was skipped as decoration, and a message that was only a photo disappeared from the export. Uploaded images are saved at the size Google stored rather than the 512 pixel preview; their links go through lh3.google.com, which needed a new permission, and they load only with your Google sign-in, which is sent for those links and nowhere else. Gemini's source chips, which name an uploaded photo but open a sources dialog, are no longer clicked as if they were files and no longer count as failed downloads. Saved pictures are now named after their real type: a JPEG queued as `.png` used to be renamed by Chrome to `.jpeg`, which left the Markdown pointing at a file that was not there. Checked on a real chat with three uploaded photos: 22 of 22 messages and 3 photos, against 20 messages and none before.
+
 ## 1.2.19
 
 Truthly chats now export. Open a chat at web.truthly.ai in Chrome and pick its tab in the extension. Truthly never puts the chat in the page address, so the exporter reads the open chat from the page itself, where Truthly holds all of it once the chat is opened. Each answer keeps its sources as a numbered list, uploaded images are saved with the chat, uploaded PDFs are named, and prompts Truthly sends but never shows are left out. The console script works on Truthly too.

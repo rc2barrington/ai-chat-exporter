@@ -636,6 +636,7 @@
         absolute.startsWith('blob:') || absolute.startsWith('data:');
       mediaQueue.push({
         url: absolute,
+        fallbackUrl: metadata.fallbackUrl || "",
         filename,
         kind,
         alt: alt || "",
@@ -643,6 +644,20 @@
         isLocal,
       });
       return filename;
+    }
+
+    // Gemini shows an uploaded or generated picture as a preview from
+    // lh3.googleusercontent.com/gg/... (512 pixels wide for an upload).
+    // "=s0" asks for the size Google stored.
+    function fullSizeImageUrl(src) {
+      try {
+        const url = new URL(src, location.href);
+        if (url.hostname !== 'lh3.googleusercontent.com' || !/^\/gg\/[^/=]+$/.test(url.pathname)) return '';
+        url.pathname += '=s0';
+        return url.href;
+      } catch (error) {
+        return '';
+      }
     }
 
     function generateMediaFilename(url, kind, idx, preferredFilename, mimeType) {
@@ -688,10 +703,13 @@
       return map[mime.split(';')[0].trim().toLowerCase()] || null;
     }
 
+    // sources-carousel-inline holds Gemini's source chips, such as one naming
+    // an uploaded photo. A chip opens a sources dialog, not the file, so it is
+    // neither text nor an attachment.
     const GEMINI_SKIP_TAGS = new Set([
       'message-actions', 'thumb-up-button', 'thumb-down-button',
       'copy-button', 'freemium-rag-disclaimer', 'sensitive-memories-banner',
-      'election-info-disclaimer', 'fact-check-button'
+      'election-info-disclaimer', 'fact-check-button', 'sources-carousel-inline'
     ]);
 
     const ATTACHMENT_EXTENSION_RE = /\.((?:pdf|csv|tsv|json|jsonl|zip|txt|md|markdown|docx?|xlsx?|pptx?|rtf|odt|ods|odp|epub|py|ipynb|js|mjs|cjs|ts|tsx|jsx|html|css|xml|yaml|yml|toml|sql|wav|mp3|m4a|ogg|flac|mp4|mov|m4v|webm|avi|png|jpe?g|gif|webp|svg|avif))(?:\s|$|[?#)\]])/i;
@@ -773,7 +791,10 @@
         'nav, header, message-actions, sources-list, [class*="message-action"], ' +
         '[class*="source-icon"], [class*="youtube"], [data-testid*="avatar"]'
       );
-      if (ancestor) return true;
+      // Gemini marks each whole turn "message-actions-hover-boundary". A
+      // match that holds the message itself wraps it; it is not an action bar.
+      const message = element.closest('user-query, model-response');
+      if (ancestor && !(message && ancestor.contains(message))) return true;
       if (/\/s2\/favicons|favicon(?:s)?\b/i.test(src || '')) return true;
       if (element.getAttribute('aria-hidden') === 'true') return true;
 
@@ -877,9 +898,11 @@
           if (!src || isDecorativeImage(child, src, alt)) return;
           if (isChatGPT && chatGptApiMessages) return;
 
-          const fname = enqueueMedia(src, 'image', alt, {
+          const fullSize = fullSizeImageUrl(src);
+          const fname = enqueueMedia(fullSize || src, 'image', alt, {
             preferredFilename: filenameFromLabel(alt),
             mimeType: child.getAttribute('type') || '',
+            fallbackUrl: fullSize ? src : '',
           });
           const altText = alt ? ` - "${alt}"` : '';
           if (fname) {

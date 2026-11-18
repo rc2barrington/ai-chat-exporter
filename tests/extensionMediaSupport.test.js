@@ -92,6 +92,18 @@ describe("extension media completeness", () => {
     expect(contentScript).toContain("data-test-id') === 'luminous-file-icon'");
   });
 
+  it("keeps Gemini uploads, at full size, and leaves its source chips alone", () => {
+    // Gemini wraps every turn in "message-actions-hover-boundary", which the
+    // action bar rule matched, so every picture in a chat was dropped.
+    expect(contentScript).toContain("if (ancestor && !(message && ancestor.contains(message))) return true;");
+    expect(contentScript).toContain("'sources-carousel-inline'");
+    expect(contentScript).toContain("url.pathname += '=s0';");
+    expect(contentScript).toContain("fallbackUrl: fullSize ? src : ''");
+    expect(offscreen).toContain("/^https:\\/\\/lh3\\.googleusercontent\\.com\\/gg\\//.test(url) ? 'include' : 'omit'");
+    expect(offscreen).toContain("AIChatExporterCore.matchImageExtensions(data.savedMedia, references)");
+    expect(manifest.host_permissions).toContain("https://lh3.google.com/*");
+  });
+
   it("fetches authenticated same-origin attachments in the provider page", () => {
     expect(contentScript).toContain("new URL(absolute).origin === location.origin");
     expect(contentScript).toContain("credentials: 'include'");
