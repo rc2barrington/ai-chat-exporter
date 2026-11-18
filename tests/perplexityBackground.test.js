@@ -78,6 +78,83 @@ it('tells an already-open Perplexity tab to refresh rather than repeat the broke
   expect(root.hasAttribute('data-ai-exporter-perplexity-root')).toBe(false);
 });
 
+// A long thread as Perplexity loads it: the newest turns first, and the rest
+// only when its thread view's pagination control is asked for them. The
+// control and the entries are props of a React component above every message.
+function longThread({ older = 10, newer = 22, failLoad = false } = {}) {
+  const { document } = parseHTML('<html><body><div id="thread"></div></body></html>');
+  const root = document.querySelector('#thread');
+  const native = [];
+  class NativeObserver {
+    constructor(callback, options = {}) { this.callback = callback; this.root = options.root || null; native.push(this); }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  const timers = { setTimeout: (...args) => setTimeout(...args), clearTimeout: id => clearTimeout(id) };
+  const context = { document, window: document.defaultView, URL, IntersectionObserver: NativeObserver,
+    innerWidth: 800, innerHeight: 600, performance: { now: () => Date.now() }, queueMicrotask, ...timers,
+    Date: class extends Date { static now() { return Date.now(); } } };
+  vm.createContext(context);
+  vm.runInContext(helper, context);
+  vm.runInContext(scraper, context);
+  const view = { entries: [], pagination: { position: 'start', hasMore: true, isLoading: false, hasError: false, loadMore: null } };
+  const leaf = { memoizedProps: {}, return: { memoizedProps: { className: 'thread' }, return: { memoizedProps: view, return: null } } };
+  const makeRow = index => {
+    const row = document.createElement('div');
+    row.className = 'w-full';
+    row.getBoundingClientRect = () => ({ top: index * 500, bottom: index * 500 + 400, left: 0, right: 800, width: 800, height: 400 });
+    const render = visible => {
+      row.innerHTML = `<div class="w-full flex flex-col">${visible ? index % 2
+        ? `<div data-workflow-final-text>Answer ${index}</div>`
+        : `<div class="group/user-bubble">Question ${index}</div>` : ''}</div>`;
+      const node = row.querySelector('[data-workflow-final-text], [class~="group/user-bubble"]');
+      if (node) node.__reactFiber$test = leaf;
+    };
+    new context.IntersectionObserver(([entry]) => render(entry.isIntersecting), { rootMargin: '2000px 0px' }).observe(row);
+    render(index >= older + newer - 5);
+    return row;
+  };
+  for (let index = older; index < older + newer; index++) root.append(makeRow(index));
+  view.entries = Array.from({ length: newer / 2 }, () => ({}));
+  view.pagination.loadMore = vi.fn(() => {
+    view.pagination.isLoading = true;
+    setTimeout(() => {
+      view.pagination.isLoading = false;
+      if (failLoad) { view.pagination.hasError = true; return; }
+      root.prepend(...Array.from({ length: older }, (_, index) => makeRow(index)));
+      view.entries = Array.from({ length: (older + newer) / 2 }, () => ({}));
+      view.pagination.hasMore = false;
+    }, 300);
+  });
+  return { context, document, root, view };
+}
+
+it('loads the older turns of a long Perplexity thread before reading it', async () => {
+  const { context, document, view } = longThread();
+  const logs = [];
+  const result = await context.AIChatExporterExtraAdapters.exportConversation(document, href, {
+    includeMedia: false, requireBackgroundRendering: true, onProgress: value => logs.push(value),
+  });
+  expect(view.pagination.loadMore).toHaveBeenCalledTimes(1);
+  expect(result.messages.map(m => m.text)).toEqual(Array.from({ length: 32 }, (_, i) => `${i % 2 ? 'Answer' : 'Question'} ${i}`));
+  expect(logs.join(' ')).toContain('Loading the turns before the 11 loaded so far');
+  expect(result.history.basis).toBe('Captured all 32 Perplexity message positions exposed by the conversation page, after loading 1 older part of the thread.');
+  expect(document.documentElement.hasAttribute('data-ai-exporter-perplexity-pages')).toBe(false);
+});
+
+it('refuses a Perplexity export when the older turns will not load', async () => {
+  const { context, document } = longThread({ failLoad: true });
+  await expect(context.AIChatExporterExtraAdapters.exportConversation(document, href, { includeMedia: false, requireBackgroundRendering: true }))
+    .rejects.toThrow('Perplexity could not load the older turns of this thread. No partial conversation was saved.');
+});
+
+it('says so when Perplexity\'s paging could not be checked', async () => {
+  const { context, document } = fixture();
+  const result = await context.AIChatExporterExtraAdapters.exportConversation(document, href, { includeMedia: false, requireBackgroundRendering: true });
+  expect(result.history.basis).toContain('Whether Perplexity held older turns could not be checked.');
+});
+
 it('registers the automatic Perplexity helper', () => {
   const manifest = readFileSync(new URL('../chrome-extension/manifest.json', import.meta.url));
   expect(JSON.parse(manifest).content_scripts[0]).toMatchObject({ world: 'MAIN', run_at: 'document_start', js: ['perplexityBackground.js'] });
