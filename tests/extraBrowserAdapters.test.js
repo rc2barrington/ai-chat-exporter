@@ -22,6 +22,7 @@ describe('Muse and Perplexity browser providers', () => {
     expect(adapter.siteName(muse)).toBe('Muse');
     expect(adapter.siteName('https://muse.ai/')).toBe('Muse');
     expect(adapter.siteName(perplexity)).toBe('Perplexity');
+    expect(adapter.siteName('https://www.perplexity.ai/session/48370ca7-e07')).toBe('Perplexity');
     for (const url of ['https://muse.ai.evil.test/thread/x', 'https://evil.test/?muse.ai', 'http://muse.ai/thread/x', 'https://www.perplexity.ai/library']) expect(adapter.siteName(url)).toBe('');
   });
   it('preserves older Muse surrogate messages and repeated turns without duplicating visible content', () => {

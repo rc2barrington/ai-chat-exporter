@@ -5,7 +5,8 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       const u = new URL(href);
       if (u.protocol !== 'https:') return '';
       if (/^(www\.)?muse\.ai$/.test(u.hostname) && (u.pathname === '/' || /^\/thread\/[^/?]+/.test(u.pathname))) return 'Muse';
-      if (/^(www\.)?perplexity\.ai$/.test(u.hostname) && /^\/search\/[^/?]+/.test(u.pathname)) return 'Perplexity';
+      // Perplexity opened threads at /search/<id>, and now also at /session/<id>.
+      if (/^(www\.)?perplexity\.ai$/.test(u.hostname) && /^\/(search|session)\/[^/?]+/.test(u.pathname)) return 'Perplexity';
       // Every Truthly chat opens at /home. The address never names the chat.
       if (u.hostname === 'web.truthly.ai' && /^\/(home\/?)?$/.test(u.pathname)) return 'Truthly';
     } catch { /* Not a URL. */ }
@@ -559,6 +560,42 @@ globalThis.AIChatExporterExtraAdapters = (() => {
         check();
       }
     }
+    // Perplexity loads a long thread's newest turns first and the older ones
+    // as you scroll up. perplexityBackground.js asks its thread view for each
+    // older part until the first turn is loaded. Before this, a long thread
+    // silently lost its beginning.
+    let perplexityParts = 0, perplexityEdge = null;
+    if (provider === 'Perplexity') {
+      const pages = name => {
+        doc.dispatchEvent(new (doc.defaultView?.Event || Event)(name));
+        const [state, count] = String(doc.documentElement?.getAttribute?.('data-ai-exporter-perplexity-pages') ?? '').split(' ');
+        return { state: state || null, count: Number(count) || 0 };
+      };
+      let page = pages('__aiExporterPerplexityPages');
+      const started = Date.now();
+      let lastCount = page.count, lastGrowth = started, askedAt = 0, askedCount = -1;
+      while (page.state === 'more' || page.state === 'loading') {
+        // Ask once per part: asking again while a part loads restarts it.
+        if (page.state === 'more' && (page.count !== askedCount || Date.now() - askedAt > 10000)) {
+          perplexityParts++;
+          progress(`Perplexity loads long threads in parts. Loading the turns before the ${page.count} loaded so far...`);
+          askedAt = Date.now(); askedCount = page.count;
+          page = pages('__aiExporterPerplexityLoadOlder');
+        }
+        await wait(500);
+        check();
+        page = pages('__aiExporterPerplexityPages');
+        if (page.count !== lastCount) { lastCount = page.count; lastGrowth = Date.now(); }
+        if ((page.state === 'more' || page.state === 'loading') && (Date.now() - lastGrowth > 30000 || Date.now() - started > 300000)) {
+          throw new Error(`Perplexity stopped loading older turns after ${page.count}. No partial conversation was saved.`);
+        }
+      }
+      if (page.state === 'error') throw new Error('Perplexity could not load the older turns of this thread. No partial conversation was saved.');
+      if (page.state === null && options.requireBackgroundRendering) {
+        throw new Error('Refresh this Perplexity chat once after updating the extension, so its older turns can be loaded. No partial conversation was saved.');
+      }
+      perplexityEdge = page.state;
+    }
     const threadRoot = provider === 'Perplexity' ? perplexityRoot(doc) : null;
     const initial = entries(doc, href, { allowPlaceholders: true, root: threadRoot });
     const first = initial[0]?.node;
@@ -618,8 +655,10 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       const references = provider === 'Perplexity' ? await collectPerplexityReferences(doc, href, wait, check) : {};
       check();
       const result = renderEntries(ordered, doc, href, { ...options, supplementalFiles: references.files });
-      const across = museWindows > 1 ? `, across ${museWindows} history windows` : '';
-      const unchecked = museStart === 'unknown' ? ' Whether Muse held older messages could not be checked.' : '';
+      const across = museWindows > 1 ? `, across ${museWindows} history windows`
+        : perplexityParts ? `, after loading ${perplexityParts} older part${perplexityParts === 1 ? '' : 's'} of the thread` : '';
+      const unchecked = museStart === 'unknown' ? ' Whether Muse held older messages could not be checked.'
+        : perplexityEdge === 'unknown' ? ' Whether Perplexity held older turns could not be checked.' : '';
       result.history = { status: 'page-verified', basis: `Captured all ${ordered.length} ${provider} message positions exposed by the conversation page${across}.${unchecked}` };
       return result;
     };
