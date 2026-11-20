@@ -15,9 +15,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const toggleThinking = document.getElementById("toggle-thinking");
   const toggleTools = document.getElementById("toggle-tools");
   const toggleMedia = document.getElementById("toggle-media");
+  const toggleToolResults = document.getElementById("toggle-tool-results");
   const toggleRepliesOnly = document.getElementById("toggle-replies-only");
-  chrome.storage.local.get("repliesOnly", settings => { toggleRepliesOnly.checked = settings.repliesOnly === true; });
-  toggleRepliesOnly.addEventListener("change", () => chrome.storage.local.set({ repliesOnly: toggleRepliesOnly.checked }));
+  // Every export setting is remembered. Replies only starts off; the others
+  // start on until they are changed.
+  const rememberedToggles = {
+    repliesOnly: [toggleRepliesOnly, false],
+    includeThinking: [toggleThinking, true],
+    includeTools: [toggleTools, true],
+    includeToolResults: [toggleToolResults, true],
+    includeMedia: [toggleMedia, true],
+  };
+  chrome.storage.local.get(Object.keys(rememberedToggles), settings => {
+    for (const [key, [toggle, fallback]] of Object.entries(rememberedToggles)) {
+      toggle.checked = typeof settings[key] === "boolean" ? settings[key] : fallback;
+    }
+  });
+  for (const [key, [toggle]] of Object.entries(rememberedToggles)) {
+    toggle.addEventListener("change", () => chrome.storage.local.set({ [key]: toggle.checked }));
+  }
 
   let detectedTabs = [];
   const selection = globalThis.AIChatExporterSelection.createSelectionState([]);
@@ -284,6 +300,7 @@ document.addEventListener("DOMContentLoaded", () => {
         repliesOnly: toggleRepliesOnly.checked,
         includeThinking: toggleThinking.checked,
         includeTools: toggleTools.checked,
+        includeToolResults: toggleToolResults.checked,
         includeMedia: toggleMedia.checked
       }
     }, (response) => {

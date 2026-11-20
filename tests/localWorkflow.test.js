@@ -22,3 +22,21 @@ it.each([["codex", false], ["claude-code", true], ["opencode", true]])("starts %
   expect(box).not.toBeNull();
   expect(box[1].includes("checked")).toBe(on);
 });
+
+// Export options are remembered for each kind of chat.
+it("remembers each source's export options, such as leaving out tool results", () => {
+  vi.stubGlobal("location", { hostname: "127.0.0.1", search: "" });
+  const store = new Map([["ai-chat-exporter:options:claude-code", JSON.stringify({ includeResults: false, includeTools: false, attachmentFolder: "yes" })]]);
+  vi.stubGlobal("localStorage", { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) });
+  const checked = (source, label) => {
+    const html = renderToStaticMarkup(createElement(ExportWorkspace, { source }));
+    for (const match of html.matchAll(/<input type="checkbox"([^>]*)\/>([^<]*)</g)) if (match[2].startsWith(label)) return match[1].includes("checked");
+    throw new Error(`No ${label} option`);
+  };
+  expect(checked("claude-code", "Include tool results")).toBe(false);
+  expect(checked("claude-code", "Include tool calls")).toBe(false);
+  // A value that is not true or false is ignored.
+  expect(checked("claude-code", "Save attachments in a folder")).toBe(true);
+  expect(checked("opencode", "Include tool results")).toBe(true);
+  vi.unstubAllGlobals();
+});

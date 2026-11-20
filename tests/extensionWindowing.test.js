@@ -133,13 +133,16 @@ describe("Chrome extension export isolation", () => {
     expect(popup).toContain("createSelectionState([])");
     expect(popup).toContain(": selection.ids()");
     expect(popup).toContain('chrome.storage.local.remove("selectedTabIds"');
-    // Saving an export preference must not restore selected chats.
+    // Saving export preferences must not restore selected chats: storage is
+    // read and written only for the remembered export switches.
     expect(popup.match(/chrome\.storage\.local\.get\([^\n]+/g)).toEqual([
-      expect.stringContaining('get("repliesOnly"'),
+      expect.stringContaining("get(Object.keys(rememberedToggles)"),
     ]);
     expect(popup.match(/chrome\.storage\.local\.set\([^\n]+/g)).toEqual([
-      expect.stringContaining('set({ repliesOnly:'),
+      expect.stringContaining("set({ [key]: toggle.checked })"),
     ]);
+    const remembered = /const rememberedToggles = \{([^}]+)\}/.exec(popup)[1];
+    expect([...remembered.matchAll(/(\w+): \[/g)].map(match => match[1])).toEqual(["repliesOnly", "includeThinking", "includeTools", "includeToolResults", "includeMedia"]);
     expect(popup).toContain("if (!popupExporting) selection.replace([])");
     expect(popup).toContain('type="checkbox" autocomplete="off" class="tab-checkbox tab-select"');
   });

@@ -41,10 +41,19 @@ describe("generateMarkdown", () => {
     expect(md).not.toContain("Tool Result");
   });
 
-  it("includes tool_result only when both toggles are on", () => {
+  it("includes tool_result when its own toggle is on", () => {
     const md = generateMarkdown(session, { includeTools: true, includeResults: true });
     expect(md).toContain("Tool Result");
     expect(md).toContain("file1");
+  });
+
+  it("keeps tool calls and tool results as separate choices", () => {
+    const results = generateMarkdown(session, { includeTools: false, includeResults: true });
+    expect(results).toContain("Tool Result");
+    expect(results).not.toContain("Tool Use");
+    const calls = generateMarkdown(session, { includeTools: true, includeResults: false });
+    expect(calls).toContain("Tool Use: `bash`");
+    expect(calls).not.toContain("file1");
   });
 
   it("emits a YAML frontmatter when requested", () => {

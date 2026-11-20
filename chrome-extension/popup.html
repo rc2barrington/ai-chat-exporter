@@ -415,11 +415,22 @@
 
         <div class="option-row">
           <div class="option-info">
-            <span class="option-label">Include Tool Logs</span>
-            <span class="option-desc">Export tool calls & results</span>
+            <span class="option-label">Include Tool Calls</span>
+            <span class="option-desc">What the AI ran, such as reading a file</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="toggle-tools" checked />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="option-row">
+          <div class="option-info">
+            <span class="option-label">Include Tool Results</span>
+            <span class="option-desc">What tools returned, such as the full text of files and earlier chats the AI read. Off keeps every message's words.</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-tool-results" checked />
             <span class="slider"></span>
           </label>
         </div>
