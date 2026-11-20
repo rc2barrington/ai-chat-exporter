@@ -16,7 +16,7 @@ Browser exports: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews, Google A
 
 Supported sources: ChatGPT, Claude.ai, Gemini, Grok, Google AI Overviews and Google Search AI Mode on google.com, Muse, Perplexity, and Truthly (web.truthly.ai). Exports run in existing tabs without moving or activating them. A tab Chrome has unloaded to save memory is loaded again in place first. Updating an unpacked extension requires replacing its files and clicking Reload in Chrome. New host permissions may require Chrome approval.
 
-Enable **AI replies only** in the extension's Export Settings, or in Export options for local sessions, to exclude your messages and their attachments. The console fallback also offers replies-only plain text output. Refresh an open Muse or Perplexity chat once after updating the extension to enable its background rendering helper.
+Turn off **Include Tool Results** in the extension, or **Include tool results** in the local app's Export options, to leave out what tools returned, such as the full text of files and earlier chats the AI read, while keeping every message's words. Tool calls are a separate switch. Both apps remember these choices. Enable **AI replies only** in the extension's Export Settings, or in Export options for local sessions, to exclude your messages and their attachments. The console fallback also offers replies-only plain text output. Refresh an open Muse or Perplexity chat once after updating the extension to enable its background rendering helper.
 
 ### iPhone: Google AI Mode and AI Overviews
 
@@ -94,6 +94,10 @@ npm run local
 CI runs tests, lint, production build and downloadable packaging. Tests include a payload larger than Chrome's 64 MiB message ceiling, byte-exact image deduplication, untruncated tool results, local file attachments, cancellation and ZIP directory timestamps. Browser-provider compatibility still requires live checks when those sites change.
 
 Please report issues with the exporter version, provider and redacted log. Do not publish conversation contents, session tokens or private attachment links.
+
+## 1.2.22
+
+Tool calls and tool results are now separate choices, in the extension and in the local app, and both remember what you pick. A tool result holds what a tool returned, which for a chat where the AI read your files is the full text of those files and of any earlier chats you attached. A Claude chat that read four earlier chat exports and a course PDF exported at 3.8 MB, 91% of it tool results; with tool calls and results off, the same chat is 926 KB with every word of its 612 messages. Turn off **Include Tool Results** (extension) or **Include tool results** (local app, under Export options) to keep only what was said. The extension now also remembers Include Thinking and Include Media, and the local app remembers its export options separately for Codex, Claude Code and OpenCode. Tool results no longer need tool calls turned on.
 
 ## 1.2.21
 

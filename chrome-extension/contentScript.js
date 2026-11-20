@@ -2193,7 +2193,7 @@
             parts.push("*Thinking:*\n\n> " + b.thinking.trim().replace(/\n/g, "\n> "));
           } else if (b.type === "tool_use" && options.includeTools) {
             parts.push("**Tool use: " + (b.name || "tool") + "**\n\n```json\n" + JSON.stringify(b.input || {}, null, 2) + "\n```");
-          } else if (b.type === "tool_result" && options.includeTools) {
+          } else if (b.type === "tool_result" && (options.includeToolResults ?? options.includeTools)) {
             let c = b.content;
             if (Array.isArray(c)) c = c.map(x => (x && x.text) || "").join("\n");
             if (typeof c !== "string") c = JSON.stringify(c ?? "", null, 2);

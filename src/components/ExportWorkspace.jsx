@@ -27,7 +27,23 @@ export function ExportWorkspace({ source }) {
   const [review, setReview] = useState(null);
   // Codex chats save as the Markdown file alone unless the attachment folder
   // is turned on. Claude Code and OpenCode chats keep it on.
-  const [options, setOptions] = useState({ includeThinking: true, includeTools: true, includeResults: true, frontmatter: false, truncateChars: 0, attachmentFolder: source !== "codex" });
+  // Options are remembered for each source, in this browser.
+  const optionsKey = `ai-chat-exporter:options:${source}`;
+  const [options, setOptions] = useState(() => {
+    const defaults = { includeThinking: true, includeTools: true, includeResults: true, frontmatter: false, truncateChars: 0, attachmentFolder: source !== "codex" };
+    try {
+      const saved = JSON.parse(localStorage.getItem(optionsKey) || "{}");
+      for (const key of ["repliesOnly", "includeThinking", "includeTools", "includeResults", "frontmatter", "attachmentFolder"]) {
+        if (typeof saved[key] === "boolean") defaults[key] = saved[key];
+      }
+    } catch { /* Private browsing or a damaged value: use the defaults. */ }
+    return defaults;
+  });
+  const changeOption = (key, value) => {
+    const next = { ...options, [key]: value };
+    setOptions(next);
+    try { localStorage.setItem(optionsKey, JSON.stringify(next)); } catch { /* Not remembered. */ }
+  };
   const picker = useRef(null);
   const folder = useRef(null);
   const controller = useRef(null);
@@ -188,8 +204,8 @@ export function ExportWorkspace({ source }) {
       </>}
     </section>
     <details className="panel advanced"><summary>Export options <span>Full text included by default</span></summary><div className="option-grid">
-      {[['repliesOnly', 'AI replies only (exclude your messages)'], ['includeThinking', 'Include saved reasoning'], ['includeTools', 'Include tool calls'], ['includeResults', 'Include tool results'], ['frontmatter', 'Add a metadata header'], ['attachmentFolder', 'Save attachments in a folder with the chat']].map(([key, label]) => <label key={key}><input type="checkbox" checked={!!options[key]} disabled={!!busy} onChange={e => setOptions({ ...options, [key]: e.target.checked })} />{label}</label>)}
-    </div><p className="fine-print">Message text and tool output are never shortened by the exporter. With the attachment folder off, each chat saves as one .md file and its attachments are named in place.</p></details>
+      {[['repliesOnly', 'AI replies only (exclude your messages)'], ['includeThinking', 'Include saved reasoning'], ['includeTools', 'Include tool calls (what the AI ran)'], ['includeResults', 'Include tool results (files and output the tools returned)'], ['frontmatter', 'Add a metadata header'], ['attachmentFolder', 'Save attachments in a folder with the chat']].map(([key, label]) => <label key={key}><input type="checkbox" checked={!!options[key]} disabled={!!busy} onChange={e => changeOption(key, e.target.checked)} />{label}</label>)}
+    </div><p className="fine-print">Message text and tool output are never shortened by the exporter. With the attachment folder off, each chat saves as one .md file and its attachments are named in place. Tool results hold the full text of files and earlier chats the AI read; turn them off to keep only what was said. These choices are remembered for each kind of chat.</p></details>
     {(error || notice || busy) && <div className={`status-message ${error ? "error" : ""}`} role="status">{error || busy || notice}{busy && <button className="text-link" onClick={() => controller.current?.abort()}>Cancel</button>}</div>}
     <div className="export-bar"><div><span className="eyebrow">3 · Export</span><strong>{picks.length ? `${picks.length} chat${picks.length === 1 ? "" : "s"} selected` : "Choose chats to export"}</strong><small>Markdown opens in any text editor and can be uploaded to an AI.</small></div><button className="button" disabled={!picks.length || !!busy} onClick={() => picks.length > 1 ? setReview([...picks]) : exportSessions([...picks])}>{picks.length > 1 ? "Review batch export →" : "Export Markdown ↓"}</button></div>
     </>}

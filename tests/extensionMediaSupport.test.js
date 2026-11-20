@@ -104,6 +104,17 @@ describe("extension media completeness", () => {
     expect(manifest.host_permissions).toContain("https://lh3.google.com/*");
   });
 
+  it("lets tool results be left out on their own, and remembers every export setting", () => {
+    const popup = readExtension("popup.html");
+    const popupScript = readExtension("popup.js");
+    expect(popup).toContain('id="toggle-tool-results" checked');
+    expect(popupScript).toContain("includeToolResults: toggleToolResults.checked");
+    for (const key of ["repliesOnly", "includeThinking", "includeTools", "includeToolResults", "includeMedia"]) expect(popupScript).toContain(`${key}: [`);
+    expect(popupScript).toContain("chrome.storage.local.set({ [key]: toggle.checked })");
+    // An older popup sends only includeTools, which covered both.
+    expect(contentScript).toContain('b.type === "tool_result" && (options.includeToolResults ?? options.includeTools)');
+  });
+
   it("fetches authenticated same-origin attachments in the provider page", () => {
     expect(contentScript).toContain("new URL(absolute).origin === location.origin");
     expect(contentScript).toContain("credentials: 'include'");

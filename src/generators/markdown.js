@@ -3,7 +3,7 @@
 // opts:
 //   includeThinking  bool   - wrap thinking blocks in <details>
 //   includeTools     bool   - render tool_use blocks
-//   includeResults   bool   - render tool_result blocks (paired with includeTools)
+//   includeResults   bool   - render tool_result blocks, such as files a tool read
 //   truncateChars    number - max chars for tool_use input fields and tool_result content (0 = no truncation)
 //   frontmatter      bool   - prepend a YAML frontmatter block
 
@@ -79,7 +79,7 @@ function renderBlock(block, opts) {
     return `**Tool Use: \`${block.name}\`**\n\`\`\`json\n${input}\n\`\`\``;
   }
   if (block.type === "tool_result") {
-    if (!opts.includeTools || !opts.includeResults) return "";
+    if (!opts.includeResults) return "";
     const text = truncateText(String(block.content || ""), opts.truncateChars);
     const label = block.is_error ? "Tool Result (error)" : "Tool Result";
     return `**${label}**\n\`\`\`\n${text}\n\`\`\``;
