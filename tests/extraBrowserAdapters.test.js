@@ -457,7 +457,7 @@ it('ships Muse, Perplexity and Truthly providers with their permissions', () => 
   const publicContext={ URL };
   const stub=source;
   vm.runInNewContext(stub,publicContext);
-  expect(publicContext.AIChatExporterExtraAdapters.names).toEqual(['Muse', 'Perplexity', 'Truthly']);
+  expect(publicContext.AIChatExporterExtraAdapters.names).toEqual(['Muse', 'Perplexity', 'Truthly', 'Z.ai']);
   expect(publicContext.AIChatExporterExtraAdapters.siteName(muse)).toBe('Muse');
   expect(publicContext.AIChatExporterExtraAdapters.siteName(perplexity)).toBe('Perplexity');
   expect(typeof publicContext.AIChatExporterExtraAdapters.exportConversation).toBe('function');
@@ -469,6 +469,7 @@ it('ships Muse, Perplexity and Truthly providers with their permissions', () => 
   expect(manifest.host_permissions.join(' ')).toContain('chatgpt.com');
   expect(manifest.host_permissions).toContain('https://web.truthly.ai/*');
   expect(manifest.host_permissions).toContain('https://backend-api.truthly.ai/*');
+  expect(manifest.host_permissions).toContain('https://chat.z.ai/*');
 });
 
 describe('Truthly', () => {
@@ -599,5 +600,84 @@ describe('Truthly', () => {
   it('tells the user to reload when the page copy is missing', async () => {
     const { adapter: truthly } = truthlyAdapter();
     await expect(truthly.exportConversation(doc('<div id="root"></div>'), home)).rejects.toThrow('Reload the extension and the Truthly tab');
+  });
+});
+
+describe('Z.ai', () => {
+  const chatUrl = 'https://chat.z.ai/c/chat-1';
+  // A chat as Z.ai's API returns it: a message tree whose shown branch runs
+  // from currentId up through parentId, with an older answer on a side
+  // branch. Agent replies have no content in the tree; /messages/batch
+  // returns them as content blocks.
+  const tree = {
+    u1: { id: 'u1', parentId: null, childrenIds: ['a1', 'a1old'], role: 'user', content: '<im_context>channel data</im_context>\nWhat is GLM?' },
+    a1old: { id: 'a1old', parentId: 'u1', childrenIds: [], role: 'assistant', content: null },
+    a1: { id: 'a1', parentId: 'u1', childrenIds: ['u2'], role: 'assistant', content: null },
+    u2: { id: 'u2', parentId: 'a1', childrenIds: ['a2'], role: 'user', content: 'Run it', files: [{ name: 'notes [v2].txt' }] },
+    a2: { id: 'a2', parentId: 'u2', childrenIds: [], role: 'assistant', content: 'Plain <details type="reasoning" done="true"><summary>Thought</summary>\n> Hidden idea\n</details>\nanswer.' },
+  };
+  const batch = {
+    a1: { id: 'a1', role: 'assistant', done: true, content: null, content_blocks: [
+      { type: 'reasoning', content: 'Weighing it' },
+      { type: 'tool_calls', content: [{ function: { name: 'search', arguments: '{"q":"GLM"}' } }], results: [{ content: 'Result with ```code``` inside' }] },
+      { type: 'text', phase: 'answer', content: 'GLM is a model family.' },
+    ] },
+    a2: { id: 'a2', role: 'assistant', done: true, content: 'Plain <details type="reasoning" done="true"><summary>Thought</summary>\n> Hidden idea\n</details>\nanswer.', content_blocks: null },
+    u2: { id: 'u2', role: 'user', done: true, content: 'Run it', files: [{ name: 'notes [v2].txt' }] },
+  };
+  function zai({ token = 'tok', status = 200, last = 'a2', done = true } = {}) {
+    const { document, window } = parseHTML('<html><body></body></html>');
+    window.localStorage = { getItem: key => key === 'token' ? token : null };
+    const requests = [];
+    const fetch = vi.fn(async (url, init = {}) => {
+      requests.push({ url: String(url), method: init.method || 'GET', body: init.body, auth: init.headers?.authorization });
+      if (status !== 200) return { ok: false, status, json: async () => ({}) };
+      if (String(url).endsWith('/messages/batch')) {
+        const ids = JSON.parse(init.body).ids;
+        return { ok: true, status: 200, json: async () => ({ data: Object.fromEntries(ids.filter(id => batch[id]).map(id => [id, { ...batch[id], done: id === last ? done : true }])) }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ title: 'GLM questions', chat: { history: { currentId: last, messages: tree } } }) };
+    });
+    const sandbox = { URL, fetch, setTimeout, clearTimeout, Date };
+    vm.runInNewContext(source, sandbox);
+    return { adapter: sandbox.AIChatExporterExtraAdapters, document, requests };
+  }
+
+  it('recognises Z.ai chat pages only', () => {
+    expect(adapter.siteName(chatUrl)).toBe('Z.ai');
+    for (const url of ['https://chat.z.ai/', 'https://chat.z.ai.evil.test/c/x', 'http://chat.z.ai/c/x', 'https://z.ai/c/x']) expect(adapter.siteName(url)).toBe('');
+  });
+
+  it('exports the shown branch with reasoning, tool calls and their results', async () => {
+    const { adapter: z, document, requests } = zai();
+    const result = await z.exportConversation(document, chatUrl, { includeThinking: true, includeTools: true, includeToolResults: true });
+    expect(result.title).toBe('GLM questions');
+    expect(result.messages.map(m => m.role)).toEqual(['## You', '## Z.ai', '## You', '## Z.ai']);
+    expect(result.messages[0].text).toBe('What is GLM?');
+    expect(result.messages[1].text).toBe('*Thinking:*\n\n> Weighing it\n\n**Tool use: search**\n\n```json\n{\n  "q": "GLM"\n}\n```\n\n**Tool result:**\n\n````\nResult with ```code``` inside\n````\n\nGLM is a model family.');
+    expect(result.messages[2].text).toBe('*File: notes  v2 .txt*\n\nRun it');
+    expect(result.messages[3].text).toBe('Plain *Thinking:*\n\n> Hidden idea\n\nanswer.');
+    expect(result.history).toEqual({ status: 'complete', basis: "Read all 4 messages of the chat's shown branch from Z.ai's chat API, which ran 1 tool call." });
+    expect(requests[0]).toMatchObject({ url: 'https://chat.z.ai/api/v1/chats/chat-1', method: 'GET', auth: 'Bearer tok' });
+    expect(JSON.parse(requests[1].body).ids).toEqual(['a1', 'a2']);
+    expect(JSON.stringify(result)).not.toMatch(/a1old|channel data/);
+  });
+
+  it('follows the thinking and tool switches', async () => {
+    const { adapter: z, document } = zai();
+    const words = await z.exportConversation(document, chatUrl, { includeThinking: false, includeTools: false, includeToolResults: false });
+    expect(words.messages[1].text).toBe('GLM is a model family.');
+    expect(words.messages[3].text).toBe('Plain answer.');
+    const calls = await z.exportConversation(document, chatUrl, { includeThinking: false, includeTools: true, includeToolResults: false });
+    expect(calls.messages[1].text).toContain('**Tool use: search**');
+    expect(calls.messages[1].text).not.toContain('Tool result');
+  });
+
+  it('asks for a sign-in, a reload, or a finished answer when it must', async () => {
+    await expect(zai({ token: '' }).adapter.exportConversation(zai({ token: '' }).document, chatUrl)).rejects.toThrow('Sign in to Z.ai in this tab');
+    const expired = zai({ status: 401 });
+    await expect(expired.adapter.exportConversation(expired.document, chatUrl)).rejects.toThrow("Z.ai's sign-in in this tab has expired");
+    const writing = zai({ last: 'a2', done: false });
+    await expect(writing.adapter.exportConversation(writing.document, chatUrl)).rejects.toThrow('Z.ai is still writing an answer');
   });
 });

@@ -155,7 +155,8 @@
       updateProgress(`Reading ${extraProvider} messages and images...`);
       const data = await globalThis.AIChatExporterExtraAdapters.exportConversation(document, location.href, {
         includeMedia: options.includeMedia, signal: abortController.signal, onProgress: updateProgress,
-        requireBackgroundRendering: true,
+        requireBackgroundRendering: true, includeThinking: options.includeThinking,
+        includeTools: options.includeTools, includeToolResults: options.includeToolResults,
       });
       // Fetch in the owning page first: blob URLs and signed-in same-origin
       // attachments cannot be resolved by an unauthenticated offscreen fetch.
