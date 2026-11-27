@@ -635,8 +635,12 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       // Background pulses rescue throttled timers, but must not shorten the
       // rendering interval when a pulse happens just after scrolling.
       const wake = () => { if (Date.now() < deadline) return; cleanup(); resolve(); };
+      // A timer can fire a millisecond before Date.now() reaches the
+      // deadline. It then waits out the rest instead of giving up, which
+      // left the wait to the next pulse, or to none outside the extension.
+      const onTimer = () => { const left = deadline - Date.now(); if (left > 0) timer = setTimeout(onTimer, left); else wake(); };
       const abort = () => { cleanup(); reject(Object.assign(new Error('Export cancelled.'), { name: 'AbortError' })); };
-      timer = setTimeout(wake, delay);
+      timer = setTimeout(onTimer, delay);
       doc.addEventListener?.('__exportWake', wake);
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();

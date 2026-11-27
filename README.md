@@ -101,6 +101,8 @@ Please report issues with the exporter version, provider and redacted log. Do no
 
 Z.ai (GLM) chats now export. Open a chat at chat.z.ai in Chrome and pick its tab in the extension. The whole chat comes from Z.ai's chat API in one go, following the branch you are looking at, with GLM's reasoning, and tool calls and their results when those switches are on. Checked on a real 22 message agent chat in a background tab.
 
+Also fixed: the Muse and Perplexity exporters' short waits could hang when a timer fired a millisecond early. In the extension the next background pulse rescued them after up to half a second; outside it, such as in the console script or tests, they never finished.
+
 ## 1.2.22
 
 Tool calls and tool results are now separate choices, in the extension and in the local app, and both remember what you pick. A tool result holds what a tool returned, which for a chat where the AI read your files is the full text of those files and of any earlier chats you attached. A Claude chat that read four earlier chat exports and a course PDF exported at 3.8 MB, 91% of it tool results; with tool calls and results off, the same chat is 926 KB with every word of its 612 messages. Turn off **Include Tool Results** (extension) or **Include tool results** (local app, under Export options) to keep only what was said. The extension now also remembers Include Thinking and Include Media, and the local app remembers its export options separately for Codex, Claude Code and OpenCode. Tool results no longer need tool calls turned on.
