@@ -1,4 +1,4 @@
-// Muse, Perplexity and Truthly browser adapters.
+// Muse, Perplexity, Truthly and Z.ai browser adapters.
 globalThis.AIChatExporterExtraAdapters = (() => {
   function siteName(href) {
     try {
@@ -9,6 +9,7 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       if (/^(www\.)?perplexity\.ai$/.test(u.hostname) && /^\/(search|session)\/[^/?]+/.test(u.pathname)) return 'Perplexity';
       // Every Truthly chat opens at /home. The address never names the chat.
       if (u.hostname === 'web.truthly.ai' && /^\/(home\/?)?$/.test(u.pathname)) return 'Truthly';
+      if (u.hostname === 'chat.z.ai' && /^\/c\/[^/?]+/.test(u.pathname)) return 'Z.ai';
     } catch { /* Not a URL. */ }
     return '';
   }
@@ -114,6 +115,102 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       try { if (typeof value === 'string' && new URL(value).protocol === 'https:') links[key] = value; } catch { /* Not a link. */ }
     }
     return links;
+  }
+  // Z.ai (GLM) is an Open WebUI app. Its chat API returns the message tree,
+  // and the branch shown is the chain of parents from history.currentId.
+  // In agent chats a reply's content is null in the tree; the page fetches
+  // it as content_blocks from /messages/batch: "text", "reasoning", and
+  // "tool_calls" (calls in content, what they returned in results). The
+  // page's own sign-in token is in localStorage, as the app reads it.
+  async function exportZai(doc, href, { includeThinking = true, includeTools = true, includeToolResults, signal } = {}) {
+    const results = includeToolResults ?? includeTools;
+    const id = decodeURIComponent(new URL(href).pathname.split('/')[2] || '');
+    let token = '';
+    try { token = doc.defaultView.localStorage.getItem('token') || ''; } catch { /* Checked below. */ }
+    if (!token) throw new Error('Sign in to Z.ai in this tab, then export again.');
+    const headers = { Accept: 'application/json', 'Content-Type': 'application/json', authorization: `Bearer ${token}` };
+    const api = async (path, init = {}) => {
+      const response = await fetch(new URL(`/api/v1/chats/${encodeURIComponent(id)}${path}`, href), { ...init, headers, signal, credentials: 'include' });
+      if (response.status === 401) throw new Error('Z.ai\'s sign-in in this tab has expired. Reload the tab and export again.');
+      if (!response.ok) throw new Error(`Z.ai would not return this chat (HTTP ${response.status}).`);
+      return response.json();
+    };
+    const chat = await api('');
+    const tree = chat?.chat?.history?.messages || {};
+    const branch = [];
+    const seen = new Set();
+    for (let node = tree[chat?.chat?.history?.currentId]; node && !seen.has(node.id); node = tree[node.parentId]) { seen.add(node.id); branch.unshift(node); }
+    if (!branch.length) throw new Error('This Z.ai chat has no messages yet.');
+    const stored = {};
+    const missing = branch.filter(node => node.role === 'assistant' || typeof node.content !== 'string').map(node => node.id);
+    for (let start = 0; start < missing.length; start += 100) {
+      const batch = await api('/messages/batch', { method: 'POST', body: JSON.stringify({ ids: missing.slice(start, start + 100) }) });
+      Object.assign(stored, batch?.data || {});
+    }
+    // A fence longer than any run of backticks inside, so code in a tool's
+    // output cannot close it early.
+    const fenced = (text, info = '') => {
+      const fence = '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map(run => run[0].length + 1)));
+      return `${fence}${info}\n${text}\n${fence}`;
+    };
+    const quote = text => '*Thinking:*\n\n> ' + text.trim().replace(/\n/g, '\n> ');
+    // The app removes context it adds to a request before showing it.
+    const userText = text => text.replace(/<im_context>[\s\S]*?<\/im_context>\n*/g, '').replace(/<original_user_request>[\s\S]*?<\/original_user_request>\n*/g, '').trim();
+    // Chats outside agent mode keep reasoning inside the content.
+    const inlineReasoning = text => text.replace(/<details\b[^>]*type="reasoning"[^>]*>([\s\S]*?)<\/details>\n*/g, (_, inner) => {
+      const thought = inner.replace(/<summary>[\s\S]*?<\/summary>/, '').replace(/^\s*>\s?/gm, '').trim();
+      return includeThinking && thought ? quote(thought) + '\n\n' : '';
+    });
+    const messages = [];
+    let tools = 0;
+    for (const node of branch) {
+      const message = { ...node, ...(stored[node.id] || {}) };
+      const parts = [];
+      for (const file of Array.isArray(message.files) ? message.files : []) {
+        const name = String(file?.name || file?.file?.filename || file?.filename || '').replace(/[[\]\r\n]/g, ' ').trim();
+        if (name) parts.push(`*File: ${name}*`);
+      }
+      if (message.role === 'user') {
+        if (typeof message.content === 'string' && userText(message.content)) parts.push(userText(message.content));
+      } else if (Array.isArray(message.content_blocks) && message.content_blocks.length) {
+        for (const block of message.content_blocks) {
+          if (block?.type === 'text' && typeof block.content === 'string' && block.content.trim()) parts.push(block.content.trim());
+          else if (block?.type === 'reasoning' && includeThinking && typeof block.content === 'string' && block.content.trim()) parts.push(quote(block.content));
+          else if (block?.type === 'tool_calls') {
+            const calls = Array.isArray(block.content) ? block.content : [];
+            tools += calls.length;
+            if (includeTools) {
+              for (const call of calls) {
+                let input = call?.function?.arguments ?? {};
+                if (typeof input === 'string') { try { input = JSON.parse(input); } catch { /* Kept as written. */ } }
+                parts.push(`**Tool use: ${call?.function?.name || 'tool'}**\n\n` + fenced(typeof input === 'string' ? input : JSON.stringify(input, null, 2), 'json'));
+              }
+            }
+            if (results) {
+              for (const result of Array.isArray(block.results) ? block.results : []) {
+                let output = result?.content ?? '';
+                if (Array.isArray(output)) output = output.map(item => item?.text ?? (typeof item === 'string' ? item : JSON.stringify(item))).join('\n');
+                if (typeof output !== 'string') output = JSON.stringify(output, null, 2);
+                if (output.trim()) parts.push('**Tool result:**\n\n' + fenced(output.trim()));
+              }
+            }
+          }
+        }
+      } else if (typeof message.content === 'string' && message.content.trim()) {
+        parts.push(inlineReasoning(message.content).trim());
+      }
+      const text = parts.filter(Boolean).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+      if (message.role === 'assistant' && message.done === false) throw new Error('Z.ai is still writing an answer. Export again when it finishes.');
+      if (text) messages.push({ role: message.role === 'user' ? '## You' : '## Z.ai', text });
+    }
+    if (!messages.length) throw new Error('This Z.ai chat has no messages yet.');
+    const firstQuestion = messages.find(message => message.role === '## You')?.text.split('\n')[0] || '';
+    return {
+      title: String(chat.title || '').replace(/[\r\n]/g, ' ').trim().slice(0, 140) || firstQuestion.slice(0, 140) || 'Z.ai chat',
+      siteName: 'Z.ai', date: new Date().toISOString(), messages, messageCount: messages.length,
+      savedMedia: [], remoteQueue: [], failedFetches: [], appendix: '',
+      history: { status: 'complete', basis: `Read all ${branch.length} messages of the chat's shown branch from Z.ai's chat API${tools ? `, which ran ${tools} tool call${tools === 1 ? '' : 's'}` : ''}.` },
+    };
   }
   async function exportTruthly(doc, href, { includeMedia = true, signal } = {}) {
     let chat = truthlyState(doc);
@@ -524,6 +621,7 @@ globalThis.AIChatExporterExtraAdapters = (() => {
     const provider = siteName(href);
     if (!provider) throw new Error('This provider is not supported.');
     if (provider === 'Truthly') return exportTruthly(doc, href, options);
+    if (provider === 'Z.ai') return exportZai(doc, href, options);
     const signal = options.signal;
     const progress = message => options.onProgress?.(message);
     const check = () => {
@@ -537,8 +635,12 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       // Background pulses rescue throttled timers, but must not shorten the
       // rendering interval when a pulse happens just after scrolling.
       const wake = () => { if (Date.now() < deadline) return; cleanup(); resolve(); };
+      // A timer can fire a millisecond before Date.now() reaches the
+      // deadline. It then waits out the rest instead of giving up, which
+      // left the wait to the next pulse, or to none outside the extension.
+      const onTimer = () => { const left = deadline - Date.now(); if (left > 0) timer = setTimeout(onTimer, left); else wake(); };
       const abort = () => { cleanup(); reject(Object.assign(new Error('Export cancelled.'), { name: 'AbortError' })); };
-      timer = setTimeout(wake, delay);
+      timer = setTimeout(onTimer, delay);
       doc.addEventListener?.('__exportWake', wake);
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
@@ -872,5 +974,5 @@ globalThis.AIChatExporterExtraAdapters = (() => {
       scroll.scrollTop = provider === 'Perplexity' && originalAtBottom ? scroll.scrollHeight : original;
     }
   }
-  return { names: ['Muse', 'Perplexity', 'Truthly'], siteName, extract, exportConversation, serveTruthly };
+  return { names: ['Muse', 'Perplexity', 'Truthly', 'Z.ai'], siteName, extract, exportConversation, serveTruthly };
 })();

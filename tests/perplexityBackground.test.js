@@ -143,6 +143,16 @@ it('loads the older turns of a long Perplexity thread before reading it', async 
   expect(document.documentElement.hasAttribute('data-ai-exporter-perplexity-pages')).toBe(false);
 });
 
+it('keeps waiting when a timer fires a moment early', async () => {
+  const { context, document } = longThread({ failLoad: true });
+  // Fire every timer 2 ms before its time, as Node and browsers can.
+  const early = (fn, ms, ...args) => setTimeout(fn, Math.max(0, (ms || 0) - 2), ...args);
+  context.setTimeout = early;
+  vm.runInContext(scraper, context);
+  await expect(context.AIChatExporterExtraAdapters.exportConversation(document, href, { includeMedia: false, requireBackgroundRendering: true }))
+    .rejects.toThrow('Perplexity could not load the older turns of this thread.');
+}, 3000);
+
 it('refuses a Perplexity export when the older turns will not load', async () => {
   const { context, document } = longThread({ failLoad: true });
   await expect(context.AIChatExporterExtraAdapters.exportConversation(document, href, { includeMedia: false, requireBackgroundRendering: true }))
